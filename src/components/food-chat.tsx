@@ -142,7 +142,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
     } finally { if (request.current === controller) { setBusy(false); request.current = null; } }
   }
   const waiting = busy || !!state?.pending;
-  const creditLimited = !!state?.quota.credits && state.quota.credits.available < state.quota.credits.maximumReplyCharge;
+  const creditLimited = !!state?.quota.credits && !state.quota.credits.canSend;
   const limited = creditLimited || !!state && (state.quota.remainingToday < 1 || state.quota.remainingBudgetUsd < .01);
   const canSend = !!state?.quota.configured && !waiting && !loading && !preparing && !limited && (!!text.trim() || photos.length > 0);
   const messages = state?.messages ?? [];

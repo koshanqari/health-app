@@ -6,6 +6,17 @@ const priceVersion = "gemini-3.1-flash-lite-v1";
 export type CreditStatus = { balance: number; available: number; held: number; multiplier: number; estimatedReplies: number; estimatedReplyCost: number; maximumReplyCharge: number };
 export type CreditTransaction = { id: string; kind: string; amount: number; balanceAfter: number; reason: string; createdAt: string; multiplier: number | null; amountPaid: number | null; actorName: string | null };
 export type CreditDetails = CreditStatus & { transactions: CreditTransaction[] };
+export type PublicCreditStatus = Pick<CreditStatus, "balance" | "available" | "estimatedReplies"> & { canSend: boolean };
+export type PublicCreditDetails = PublicCreditStatus & { transactions: Pick<CreditTransaction, "id" | "kind" | "amount" | "balanceAfter" | "reason" | "createdAt">[] };
+export function publicCreditStatus(data: CreditStatus): PublicCreditStatus {
+  return { balance: data.balance, available: data.available, estimatedReplies: data.estimatedReplies, canSend: data.available >= data.maximumReplyCharge };
+}
+export function publicCreditDetails(data: CreditDetails): PublicCreditDetails {
+  return { ...publicCreditStatus(data), transactions: data.transactions.filter(item => item.kind !== "pricing").map(item => ({
+    id: item.id, kind: item.kind, amount: item.amount, balanceAfter: item.balanceAfter, createdAt: item.createdAt,
+    reason: item.kind === "welcome" ? "Welcome credits" : item.kind === "topup" ? "Credits added" : item.kind === "refund" ? "Credits returned" : item.amount === 0 ? "AI reply · No charge" : "AI reply",
+  })) };
+}
 export class CreditError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
@@ -85,7 +96,7 @@ async function lockWallet(connection: DatabaseConnection, userId: string) {
 export async function reserveCredits(connection: DatabaseConnection, userId: string) {
   const wallet = await lockWallet(connection, userId), { fxCents } = creditSettings();
   const cents = creditCharge(CREDIT_RESERVATION_USD_MICROS, fxCents, wallet.multiplierHundred);
-  if (wallet.balanceCents - wallet.heldCents < cents) throw new CreditError(402, "AI_CREDITS", `You need at least ${(cents / 100).toFixed(2)} available credits for a reply. Add credits to continue with Kay.`);
+  if (wallet.balanceCents - wallet.heldCents < cents) throw new CreditError(402, "AI_CREDITS", "You don’t have enough credits for another reply. Add credits to continue with Kay.");
   await connection.execute('UPDATE "creditWallet" SET "heldCents" = "heldCents" + $1 WHERE "userId" = $2', [cents, userId]);
   return { cents, fxCents, multiplierHundred: wallet.multiplierHundred, priceVersion };
 }

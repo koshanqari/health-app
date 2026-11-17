@@ -35,10 +35,10 @@ after(async () => {
 });
 test("welcome credits are granted once, members see only their wallet, and inputs cannot set signup balances or rates", async () => {
   for (let index = 0; index < 2; index++) {
-    const result = await fetch(base + "/api/credits", { headers: { Cookie: users[0].cookie } });
+    const result = await fetch(base + "/api/credits" + (index ? "?userId=" + users[0].id : ""), { headers: { Cookie: users[0].cookie } });
     assert.equal(result.status, 200);
     const wallet = await result.json();
-    assert.equal(wallet.balance, 20); assert.equal(wallet.available, 20); assert.equal(wallet.multiplier, 2);
+    assert.equal(wallet.balance, 20); assert.equal(wallet.available, 20); assert.equal("multiplier" in wallet, false); assert.equal("maximumReplyCharge" in wallet, false); assert.equal(wallet.canSend, true);
     assert.equal(wallet.transactions.filter((row: { kind: string }) => row.kind === "welcome").length, 1);
     assert.equal(wallet.transactions.find((row: { kind: string }) => row.kind === "welcome").amount, 20);
     assert.ok(wallet.estimatedReplies > 0);
@@ -66,6 +66,14 @@ test("admin top-ups and refunds are audited and idempotent; changing an operatio
   assert.equal((await post(operation({ action: "pricing", multiplier: 11 }))).status, 400);
   assert.equal((await post(operation({ action: "refund", amount: 5, amountPaid: null, reason: "Correction" }))).status, 200);
   assert.equal((await getCreditDetails(users[0].id)).balance, 75);
+  await administerCredits(users[1].id, operation({ action: "pricing", multiplier: 3, reason: "Private multiplier note" }));
+  const publicWallet = await (await fetch(base + "/api/credits", { headers: { Cookie: users[0].cookie } })).json();
+  assert.equal("multiplier" in publicWallet, false);
+  assert.equal(publicWallet.transactions.some((item: { kind: string }) => item.kind === "pricing"), false);
+  assert.equal(JSON.stringify(publicWallet).includes("Private multiplier note"), false);
+  assert.ok(publicWallet.transactions.every((item: object) => !("multiplier" in item) && !("amountPaid" in item)));
+  const adminWallet = await (await fetch(base + "/api/credits?userId=" + users[0].id, { headers: { Cookie: users[1].cookie } })).json();
+  assert.equal(adminWallet.multiplier, 3);
   await assert.rejects(administerCredits(users[0].id, operation()), error => error instanceof CreditError && error.status === 403);
 });
 test("a pending reply holds credits and settles at its original rate even after an admin rate change", async () => {
@@ -81,7 +89,8 @@ test("a pending reply holds credits and settles at its original rate even after 
   } finally { release(); }
   const first = await pending;
   assert.equal(first.quota.credits!.balance, 19.7);
-  assert.equal(first.quota.credits!.held, 0);
+  assert.equal((await getCreditDetails(users[0].id)).held, 0);
+  assert.equal("multiplier" in first.quota.credits!, false);
   const cached = await run(settings, async () => { throw new Error("Cached retry must not call provider"); }, key);
   assert.equal(cached.cached, true); assert.equal(cached.quota.credits!.balance, 19.7);
   await run(settings);

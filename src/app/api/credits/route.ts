@@ -1,6 +1,6 @@
 import { getSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
-import { administerCredits, CreditError, getCreditDetails } from "@/lib/credits";
+import { administerCredits, CreditError, getCreditDetails, publicCreditDetails } from "@/lib/credits";
 
 export const runtime = "nodejs";
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   if (!session) return json({ message: "Sign in to view credits." }, 401);
   const userId = new URL(request.url).searchParams.get("userId") || session.user.id;
   if (userId !== session.user.id && session.user.role !== "admin") return json({ message: "Administrator access required." }, 403);
-  try { return json(await getCreditDetails(userId)); } catch (error) { return failure(error); }
+  try { const data = await getCreditDetails(userId); return json(session.user.role === "admin" && new URL(request.url).searchParams.has("userId") ? data : publicCreditDetails(data)); } catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
   const session = await getSession();

@@ -932,6 +932,9 @@ test("AI credit balance shows approximate replies and contact, updates after rep
   const wallet = page.getByRole("dialog", { name: "AI credits", exact: true });
   await expect(wallet.locator(".credit-total strong")).toHaveText(current.available.toFixed(2));
   await expect(wallet.locator(".credit-estimate")).toContainText(/About \d+ replies remaining/);
+  await expect(wallet.locator(".credit-facts")).toHaveCount(0);
+  await expect(wallet).not.toContainText(/multiplier|Current rate|Maximum per reply|temporarily reserved|₹1|\d+(?:\.\d+)?×/);
+  await expect(wallet.getByRole("heading", { name: "Credit history", exact: true })).toBeVisible();
   await wallet.getByRole("button", { name: "Add credits", exact: true }).click();
   await expect(wallet.getByRole("link", { name: /Koshan Qari on LinkedIn/ })).toHaveAttribute("href", "https://in.linkedin.com/in/koshanqari");
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-credit-wallet.png`, fullPage: true });

@@ -4,7 +4,7 @@ import type { DatabaseRow } from "./db";
 import { db } from "./db";
 import { parseFood, type FoodEstimate, type PhotoAnalysisStatus } from "./food";
 
-import { CREDIT_RESERVATION_USD_MICROS, CreditError, getCreditDetails, reserveCredits, settleCredits } from "./credits";
+import { CREDIT_RESERVATION_USD_MICROS, CreditError, getCreditDetails, publicCreditStatus, reserveCredits, settleCredits } from "./credits";
 
 export const FOOD_AI_MODEL = "gemini-3.1-flash-lite";
 export const MAX_PHOTO_BYTES = 1024 * 1024;
@@ -64,7 +64,7 @@ export async function foodAiStatus(userId: string, settings = foodAiSettings()):
     [userId, settings.scope, day],
   );
   return {
-    credits: await getCreditDetails(userId, false),
+    credits: publicCreditStatus(await getCreditDetails(userId, false)),
     configured: !!settings.apiKey,
     remainingToday: Math.max(0, Math.min(settings.userDailyLimit - Number(counts[0].own), settings.globalDailyLimit - Number(counts[0].total))),
     monthlyBudgetUsd: settings.monthlyBudgetMicros / 1_000_000,

@@ -14,7 +14,7 @@ export type FoodEstimate = Pick<FoodInput, "name" | "calories" | "fat" | "protei
   analysisId: string; assumptions: string;
 };
 export type PhotoAnalysisStatus = {
-  credits?: import("./credits").CreditStatus; configured: boolean; remainingToday: number; monthlyBudgetUsd: number; remainingBudgetUsd: number;
+  credits?: import("./credits").PublicCreditStatus; configured: boolean; remainingToday: number; monthlyBudgetUsd: number; remainingBudgetUsd: number;
 };
 export type FoodChatDraft = FoodInput & FoodEstimate & { draftId: string; targetEntryId: string | null; targetSnapshot: FoodInput | null };
 export type FoodChatGoalDraft = {
