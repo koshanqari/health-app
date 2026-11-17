@@ -23,4 +23,13 @@ function getDevelopmentOrigins() {
 }
 
 export const developmentOrigins = getDevelopmentOrigins();
-export const trustedAppOrigins = [...new Set([new URL(appBaseURL).origin, ...developmentOrigins, ...(process.env.VERCEL && process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [])])];
+const configuredOrigins = (process.env.APP_TRUSTED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean).map(value => {
+  let url: URL;
+  try { url = new URL(value); }
+  catch { throw new Error("APP_TRUSTED_ORIGINS must contain comma-separated HTTP(S) origins."); }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash || value.includes("*")) {
+    throw new Error("APP_TRUSTED_ORIGINS must contain exact HTTP(S) origins without credentials, paths, queries, fragments, or wildcards.");
+  }
+  return url.origin;
+});
+export const trustedAppOrigins = [...new Set([new URL(appBaseURL).origin, ...developmentOrigins, ...configuredOrigins, ...(process.env.VERCEL && process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [])])];
