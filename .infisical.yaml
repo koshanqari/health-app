@@ -1,0 +1,7 @@
+version: 1
+general:
+  domain: https://app.infisical.com
+secrets-management:
+  project-id: 99f20f22-da03-41e3-bd1b-df1b13a7de9d
+  environment: dev
+  secret-path: /

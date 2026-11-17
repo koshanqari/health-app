@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.next-preview/
+.env*
+!.env.example
+*.tsbuildinfo
+playwright-report/
+test-results/
+.DS_Store
+
+.vercel/
+.backups/
+.aws/
+.codex/
+.agents/
+.npmrc

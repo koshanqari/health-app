@@ -1,0 +1,13 @@
+.env*
+.backups/
+.next/
+.next-preview/
+.git/
+node_modules/
+playwright-report/
+*.tsbuildinfo
+.vercel/
+.aws/
+.codex/
+.agents/
+.npmrc

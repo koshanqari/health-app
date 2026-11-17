@@ -1,0 +1,225 @@
+# Health app PRD
+
+Status: Accounts, food journal, Gemini photo estimates, and the AI companion Kay with contextual food logging implemented locally. Live Google photo input and contextual chat verified; representative meal-photo quality testing remains. Updated 17 November 2026.
+
+## Purpose
+
+Make daily food and exercise logging easy, and use visible progress to motivate a healthier lifestyle. The app is for the owner initially, followed by a small group of invited friends.
+
+## Current direction
+
+| Decision | Direction |
+| --- | --- |
+| First version | Mobile-friendly web app with camera and photo upload |
+| Hosting | Vercel, using its free plan and serverless API functions |
+| Database | Neon Postgres in AWS Singapore; a separate Docker Postgres database is available for isolated tests |
+| Login | Email and password using Better Auth, with database-backed sessions |
+| Photo storage | No permanent image storage; photos are processed in memory and sent to Gemini on request |
+| Budget | Target ₹100–₹200 per month for the whole app, preferably less; a manual $5–$10 API-credit recharge is acceptable |
+| Development approach | Build and iterate on the core features; maintain this single PRD |
+| Visual direction | Headspace is the ongoing UI/UX reference: warm cream surfaces, rounded Nunito Sans typography, generous space, friendly copy, light mint-green primary actions, welcoming cards, and bottom navigation |
+
+Vercel will host the Next.js and TypeScript application, admin panel, and serverless API. Neon Postgres replaces the original local MySQL database. Existing accounts, password hashes, roles, food entries, and AI usage were imported and verified; local MySQL and private recovery snapshots are retained. Food analysis uses a server-side Gemini 3.1 Flash-Lite integration. The owner added ₹500 of Gemini credit and configured the server key. The preview was restarted and one live request through the authenticated upload endpoint verified image input, model access, structured output, and no-food rejection. The blank test image correctly produced no food estimate; returned usage was 683 input tokens and 48 output tokens, costing an estimated $0.000243 at the configured prices. The temporary test account was removed while retaining the cost in the shared usage ledger. A three-turn live chat check also passed: an explicitly specified 105 kcal meal draft was corrected to 52.5 kcal from “half,” saved only after confirmation, and summarized from the journal; three requests cost an estimated $0.001100. That temporary account and its food/chat were removed while retaining actual usage accounting. Validate nutrition quality on representative meal photos next. The working app name is Daywell.
+
+## Current build
+
+The current build implements account access, a private food journal, reviewable nutrition estimates from photos, and the AI companion Kay in the center AI tab. **Headspace is our UI/UX reference for this and future features.** Use its welcoming, uncluttered feel with warm cream backgrounds, rounded Nunito Sans typography, generous spacing, simple flat illustrations, and pill-shaped primary buttons. Daywell uses light mint green (#A8DAB5) for primary actions, with darker mint hover and pressed states, readable dark green button text (#214E2C), and pale green highlights (#E6F4EA). Standalone links, accent labels, and selected navigation use a more saturated green (#147C36), distinct from neutral charcoal body text (#30343B). Google’s [official green (#34A853)](https://partnermarketinghub.withgoogle.com/brands/android-enterprise/visual-identity/color-palette/) informs the green direction; the lighter mint is our own UI choice. The login and signup screens pair a friendly introduction with a clear form; the member app uses persistent bottom navigation for Home, Food, AI, Activity, and Progress, with space reserved for phone safe areas. Home has a pale green welcome card, rounded neutral feature cards, and an account confirmation card. Food opens the working manual journal; Activity and Progress remain protected coming-soon screens. Admin counts retain plain rows and separators. The account directory retains search, role filters, sorting, and pagination. Use native accessible controls and lightweight CSS rather than the Atlassian component system. Avoid multicolored cards, colored icon tiles, corporate sidebars, decorative dashboards, and excessive motivational copy. Keep each screen focused on its main task. Reference: [Headspace](https://www.headspace.com/).
+
+- `/signup`: name, email, password, password confirmation, and immediate member sign-in.
+- `/login`: member sign-in, password visibility toggle, and persistent sessions.
+- `/admin/login`: administrator sign-in, with ordinary accounts rejected from that flow.
+- `/app`: protected member home with welcome and feature cards. The Food tab (`?tab=food`) opens the journal; Activity and Progress remain coming-soon screens.
+- `/app?tab=chat`: the AI companion **Kay**, opened through the center **AI** tab. Its identity is broader than food; food logging is its current implemented capability, with exercise and other features to follow. Send text, take photos one by one, or select up to five photos together; clarify portions and correct a pending draft through follow-up messages. Replies can prepare one combined meal, ask a question, summarize today’s saved totals, or discard a draft. Chat never writes food automatically: Review meal → edit the compact form → Log meal. Explicit corrections to saved meals use Review correction → Save correction, updating the existing entry. Exercise logging remains deferred.
+- Multiple photos: up to five per message, each resized to JPEG with a maximum 1,024-pixel edge and 1 MB per image; combined resized images must be at most 3 MB. The composer appends new selections/camera captures, shows individual thumbnails with removal, and preserves them on failure for an explicit retry. With multiple photos, an optional “Photos show” selector offers automatic interpretation, different dishes in one meal, or the same food from different angles. Kay is instructed to combine distinct foods once, treat overlapping views as evidence rather than extra servings, and clarify ambiguous serving counts. Clarifications briefly describe the observed foods and portions so a subsequent text reply can retain that evidence without re-uploading the photos. The result is one combined meal draft, never one automatic entry per photo. Exact duplicate normalized images are sent to Gemini once. Photo count and interpretation mode persist in chat history; image bytes do not. Verification: 40 backend checks passed; the current desktop/mobile browser suite has 18 passing checks after removal of the standalone Food photo panel, including batch selection, repeated camera additions, removal without invalidating remaining thumbnails, retained photos after provider failure, and explicit retry without duplicated messages. A live three-image blank-surface check completed in one Google request, produced no food draft, and cost an estimated $0.000667; the temporary account was removed while retaining usage accounting. One batch uses one provider call/AI attempt, with actual token usage charged to the existing shared allowance.
+- Conversation context: the current draft, the last 12 successful conversation messages, today’s actual totals, and up to 20 saved meals from today and the previous seven days, all scoped to the signed-in member. Server time in the browser’s IANA time zone resolves dates. Only recent messages from the active temporary conversation are supplied to Gemini; no conversation history browser is shown. A photo batch is sent only with its initial message; follow-ups use the saved draft and assumptions without re-uploading it.
+- Chat persists one conversation per user in Postgres, including text, draft/confirmation snapshots, and photo-attachment indicators. Photos themselves remain transient. Refreshing starts a new conversation when AI is opened; switching tabs preserves the composer, attachment, and in-flight reply. Failed messages retain the text/photo for explicit retry while the page stays open; a refreshed page cannot restore an unsaved photo file.
+- Chat safety and consistency: no arbitrary AI tools or SQL. Structured drafts use the same nutrition validation as manual food. All saves are explicit and server-checked. Per-conversation leases serialize requests; request IDs make completed turns replay-safe. Logging and its chat receipt commit atomically and repeated confirmations cannot duplicate food. Old drafts are superseded, and saved-meal corrections stop if the underlying record was edited or deleted.
+- `/api/food/chat`: authenticated, owner-scoped GET for conversation/history, same-origin bounded multipart POST for text/photo turns, and same-origin PATCH for confirming a reviewed draft, and authenticated same-origin DELETE for starting a new chat without deleting saved food. The existing Gemini model, key, shared usage ledger, monthly allowance, and daily caps cover both chat and photo estimates. Each new AI reply consumes an attempt, including a reply to a multi-photo batch; reading history and confirming food make no model call.
+- `/app?tab=food`: create, edit, delete (with confirmation), and backdate food entries. Only calories, fat, protein, and carbs require user input. The form follows the supplied Google reference: compact grouped rows, nutrition first, optional details below, no decorative copy, and visible Cancel/Save actions. Food name and meal can be left blank; unnamed entries display as “Food entry” and entries without a meal appear under Other. New entries default to Healthy and the current local date/time; editing preserves the stored category. Meals are grouped by breakfast, lunch, dinner, snack, and Other when unspecified.
+- Navigation performance: authenticate and render the initial app on the server, then switch member tabs locally through the History API without page/server-component requests. Home, Food, AI, Activity, and Progress stay mounted; Back/Forward, direct links, tab-specific scroll positions, journal date, and summary period are preserved. Food starts loading in the background after hydration.
+- Food data remains in component memory for up to 32 selected dates, with a 30-second freshness window. Revisits show cached data immediately; stale data refreshes in the background on return/focus. Successful writes invalidate cached summaries, and sign-out unmounts the app and its memory cache. No food records are cached in local storage.
+- Food summaries: daily or monthly calories and macros, Unhealthy entry counts, Unhealthy calories, and their share of total calories. Zero-calorie totals show no percentage. The journal lists the latest 200 entries for the selected day and clearly notes when more exist; totals include all entries.
+- Photo logging lives exclusively in Kay’s center AI tab: attach one or more photos → send → review the meal draft → correct and save through the existing compact form. The Food tab contains the journal and manual Log food action; its earlier Use photo control and separate photo panel have been removed. The photo estimate includes food name, calories, fat, protein, carbs, and short portion assumptions. Healthy remains the default unless the user explicitly changes it. It never auto-saves; only confirmed entries affect totals. Analysis runs independently of member tab navigation; returning to AI retains the pending request or result. Manual logging remains available if the key is missing, analysis fails, or allowances are exhausted.
+- Both manual and photo-prefilled forms show a non-blocking macro mismatch warning when calories differ from protein × 4 + carbs × 4 + fat × 9 by more than the larger of 50 kcal or 20% of the macro estimate. Saving the entered values remains allowed.
+- Legacy `/api/food/analyze` (retained for compatibility with earlier clients, without a Food-tab entry point): authenticated GET for availability/allowances and same-origin POST for multipart photo analysis. Server-only Google key, strict structured nutrition output, bounded upload, 20-second provider timeout, and no automatic provider retries. Owner-scoped analysis provenance is stored with confirmed food and survives edits.
+- `/api/food`: authenticated, owner-scoped GET/POST/PATCH/DELETE backed by Postgres; numeric/date/category validation and same-origin mutation checks. Entries retain their entered local date/time and time zone, so reporting dates remain stable. Run `npm run db:migrate` to create the food table on each database.
+- `/admin`: protected account directory, search and role filters, and live member, admin, and active-session counts.
+- Sign-out revokes the database session. Passwords are hashed; session cookies are HTTP-only; authentication attempts are rate-limited in Postgres.
+- Public signup always creates an ordinary member. Create administrators through the local administrative script, not through public signup.
+
+Live meal-photo quality verification, saved-meal reuse, exercise logging, goals, approval and suspension tools, password recovery, email verification, exports, and account deletion are later work. The requirements below describe the broader product, not completed features.
+
+## First release features
+
+### Accounts and onboarding
+
+- Users can sign up with their name, email, and password, then sign in and sign out. Google sign-in is deferred.
+- The current slice allows public member signup; there is no public administrator signup. Member approval can be added before a wider rollout. Each member's food records and conversation remain private; future exercise and goal records will follow the same ownership rules.
+- Users set their timezone, calorie intake goal, and exercise calorie goal.
+- Use kcal for energy and grams for nutrients initially.
+
+### Food logging
+
+- Manual entry requires calories, fat, protein, and carbs, in that order. Use compact grouped input rows with units on the right, followed by optional food name, meal, date/time, and category controls. Food name and meal may remain blank. Date/time defaults automatically and Healthy is preselected. Save enables only when all four nutrition values are valid. Nutrition values describe the total amount eaten; no quantity input is needed.
+- Every saved entry retains a food category without requiring user interaction: **Healthy** or **Unhealthy**, with **Healthy selected by default** for each new entry. Switching takes one tap. There is no Mixed category, and the app does not infer the category from whether the food is homemade or ordered. Preserve the saved category when editing an entry.
+- Encourage logging everything, including treats, without guilt messages or additional steps for Unhealthy entries. Daily and monthly summaries show the number of Unhealthy entries, their calories, and their share of total logged calories.
+- Take a photo or select one from the phone's photo library.
+- Optionally add the dish name, ingredients, or approximate portion.
+- Generate one draft for the total pictured meal, with a food name, calories, protein, carbohydrates, fat, and short portion assumptions. Separate itemized ingredients and measured portion sizes are later work.
+- The AI integration prefills the existing compact food form from an uploaded photo, especially calories, fat, protein, and carbs. Reuse the same entry schema, validation, and save flow as manual logging. Keep manual entry available; photo upload is not required to log food. Healthy remains the default category unless the user changes it.
+- Implemented consistency check for both manual and AI-prefilled drafts: compare entered calories with the approximate energy implied by the macros and show a non-blocking warning for a significant mismatch. Do not require an exact match or silently overwrite the entered values. Warn only when the difference exceeds both 50 kcal and 20% of the approximate macro energy.
+- Let the user correct items, portions, and nutrition before confirming the meal. Identify AI values as estimates.
+- Add confirmed meals to daily totals. Unconfirmed drafts do not contribute.
+- Support manual entry, editing, deletion, and backdated meals.
+- Save frequently eaten meals and log them again with adjusted portions without another AI call.
+- If analysis fails or reaches its limit, keep the selected photo and portion note available; show an error and leave manual logging available. No invented nutrition values are filled after failure.
+
+Photo nutrition is a core feature. Test whether the selected model produces useful estimates for typical meals before treating the feature as ready. If it does not, revisit the model or scope explicitly.
+
+### Exercise logging
+
+- Record the activity, duration, date, and calories burned.
+- Initially allow the user to enter active exercise calories, including a value from a wearable or exercise machine.
+- Store the value's source and identify it as an estimate where appropriate.
+- Allow editing, deletion, and backdated workouts.
+- Automatic estimates from activity, duration, and body weight are a possible follow-up feature.
+
+### Daily dashboard
+
+- Show total confirmed food calories and protein, carbohydrates, and fat.
+- Show logged active exercise calories separately.
+- Show progress toward the intake and exercise goals independently.
+- Provide quick actions to add food and exercise, and inspect today's entries.
+- Let users mark food and activity logging complete separately, including explicitly recording no exercise.
+
+Logged exercise calories do not represent total daily energy expenditure. The dashboard must not present intake minus logged exercise as a measured calorie deficit or automatically increase the food goal after a workout.
+
+### Goals and monthly progress
+
+- Users can set an intake range and a minimum active exercise calorie target. These goal rules are proposed for review.
+- Allow exercise rest days without treating them as failures.
+- Show a monthly calendar and counts for intake goals achieved, exercise goals achieved, and both achieved on the same day.
+- Distinguish achieved, missed, incomplete, rest, current, and future days using text as well as color.
+- A day only earns an achievement when its relevant logging is marked complete and the total meets its goal.
+- Count elapsed scheduled days through yesterday for monthly percentages. Keep incomplete days in that denominator; show today's progress separately.
+- Apply goal changes to future days by default. Backdated entry corrections use the goal that applied on that date.
+- Keep entries on their recorded local reporting dates when the profile timezone changes. Let users correct dates explicitly.
+
+Example: Six achieved days, two missed days, and two incomplete days means six of ten scheduled days achieved. Days before goal setup, rest days for that goal, and future days are excluded.
+
+### Admin panel
+
+- Provide a protected admin area within the same app.
+- Approve members and suspend access.
+- See operational usage, failed analyses, and remaining allowances.
+- Change analysis limits and disable photo analysis when necessary.
+- Keep members' meal history and photos out of the default admin view.
+- Enforce permissions on the server; users cannot grant themselves admin access.
+
+### Privacy and account controls
+
+- Do not store food photos permanently in this version. Only the signed-in member receives the estimate; saved food and analysis references are owner-scoped.
+- Allow users to export their records and delete their account and associated data.
+- Explain that food photos are processed by the selected AI provider before the first analysis.
+- Process the image in memory only. Store an owner-scoped image hash and a short estimate cache for 24 hours, then clear cached JSON opportunistically on analysis-status access. Active chat text, draft/confirmation snapshots, and attachment indicators are cleared on New chat or the first AI visit after reload; no photo bytes or public image URLs are stored. Keep confirmed nutrition history and a compact usage ledger for quotas and spend accounting; the ledger records user, timestamp, status, and tokens/cost, without the photo or raw portion note. Provider retention is governed by Google’s terms and billing tier.
+- Keep provider credentials on the server and exclude personal meal content from operational logs.
+- Arrange database exports and verify recovery before inviting friends. Add separate photo backup and retention rules if permanent image storage is introduced later.
+
+## Budget and service limits
+
+Start hosting on free plans with a supplied domain. A manual $5–$10 prepaid AI credit purchase is acceptable; recommend starting with $5. Target ₹100–₹200 per month across the app, preferably less. Keep automatic top-ups off and avoid fixed paid subscriptions, SMS, and a custom domain initially. Include setup, annual charges, taxes, and credit expiration when assessing effective cost.
+
+AI cost planning (checked 17 November 2026): [Gemini 3.1 Flash-Lite standard pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite) is $0.25 per million text/image input tokens and $1.50 per million output tokens, including thinking. An illustrative request with 3,000 total input tokens and 500 output tokens costs $0.0015; 100, 500, and 1,000 analyses cost $0.15, $0.75, and $1.50 respectively, before taxes, retries, or other services. Using ₹100/$ solely as a conservative planning conversion gives ₹15, ₹75, and ₹150. These are assumptions to verify against real token usage, not measured meal-analysis costs or a live exchange-rate quote. [Google's prepaid billing](https://ai.google.dev/gemini-api/docs/billing#prepay) starts at $5 and unused credits expire after 12 months. Prototype on 10–20 representative food photos before final provider selection. Build application-level usage limits with a safety margin; provider billing and prepaid balances are not instantaneous spending cutoffs. AI requests must not block tab navigation.
+
+Implemented defaults: 10 new AI requests (chat replies and photo analyses together) per member per UTC day, 50 across the app per UTC day, and a shared $1.00 per UTC calendar month application allowance. Before each external request, atomically reserve $0.01 in Postgres, then replace the reservation with cost calculated from returned input/output/thinking token usage. If usage is unavailable on failure or cancellation, retain the conservative reservation. Attempts count even when analysis fails. Concurrent requests share the same locked budget row; identical in-flight photos from the same member are deduplicated. Successful and no-food responses for the same normalized image, portion note, model, and prompt version are reused per owner for 24 hours without another call or attempt. App allowances do not guarantee the provider’s final invoice; check Google billing separately.
+
+Chat turns send at most five photos and 1,000 characters of new user text and request at most 1,024 output tokens. Standalone photo estimates request at most 768 output tokens. Context remains bounded rather than growing with the entire chat history. Chat retries reuse the same turn ID and are bound to every normalized image, its order, text, time zone, and interpretation mode; cached provider results can complete a retried turn without repeating the Google call.
+
+Images are resized in the browser to a maximum 1,024-pixel edge and JPEG before upload (up to 1 MB each; chat batches up to 3 MB combined plus a bounded multipart envelope); server-side image decoding repeats size/format checks, strips metadata, and rejects unsupported or animated images. Original selection is capped at 20 MB. Browser-decodable phone images are supported; otherwise ask for a JPEG. No storage subscription is needed for this flow. Multiple images are sent as image parts in one request, following [Google’s image-input documentation](https://ai.google.dev/gemini-api/docs/generate-content/image-understanding); the bounded chat upload stays below the documented [Vercel request-body limit](https://vercel.com/docs/functions/limitations).
+
+Continue accounting for retries and add reuse of confirmed meals later. Monitor database compute, storage, transfer, and AI allowances. Stop restricted operations at their limits instead of automatically upgrading. Preserve text logging when photo storage or AI limits are reached.
+
+The app uses Neon Postgres with pooled connections in AWS Singapore. Start on Neon’s Free plan and keep the overall ₹100–₹200 monthly target. Local Docker Postgres remains available for isolated development and testing; MySQL is retained only as the original recovery source. Growth requires reviewing capacity and budget; free operation is a bounded pilot target.
+
+## First release acceptance criteria
+
+- A member can photograph food, review its estimated nutrition, confirm it, and see the correct daily totals.
+- A member can log and correct workouts and see progress toward the exercise goal.
+- Monthly counts correctly handle incomplete logs, rest days, goal changes, and corrected entries.
+- Members cannot access another member's data or perform admin actions.
+- Analysis failure and exhausted AI allowance leave manual logging usable.
+- The owner can use the core flow comfortably on an iPhone browser. Aim for a saved meal in under 15 seconds and a photo meal in under a minute, including review.
+- The pilot runs on free services, with usage visible and no automatic paid upgrades.
+
+## Later features
+
+Native iPhone and Android apps, Apple Health or other wearable synchronization, automatic exercise estimates, recipes, food search, barcodes, reminders, weight trends, offline synchronization, and optional sharing can follow the first release. Payments, public social feeds, and medical advice are outside the initial scope.
+
+## Open product decisions
+
+- Monitor Neon and Vercel free-plan usage as friends join. Permanent photo history is deferred.
+- Verify Gemini 3.1 Flash-Lite on 10–20 representative meals, including Indian dishes, mixed plates, and unclear/non-food images; revisit the model if its estimates are not useful.
+- Confirm whether manual exercise calories are sufficient for the first release.
+- Confirm the proposed intake range and rest-day behavior. Decide whether photo history is useful before adding permanent storage.
+
+## Local setup
+
+### Infisical environments
+
+Secrets are moving to the US Cloud Infisical project `99f20f22-da03-41e3-bd1b-df1b13a7de9d` at `https://app.infisical.com`. The root `.infisical.yaml` contains public configuration only. Use the root secrets folder (`/`) in each environment: `dev` connects to Neon's **development** branch; `prod` connects to its **production** branch. Select the matching branch in Neon's Connect dialog and use its pooled Postgres URL for `DATABASE_URL`; the branch name is not encoded as the database name.
+
+In each Infisical environment, set `DATABASE_URL`, a separate random `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GEMINI_API_KEY`, `AI_MONTHLY_BUDGET_USD=1.00`, `AI_DAILY_LIMIT=10`, and `AI_GLOBAL_DAILY_LIMIT=50`. Development uses `BETTER_AUTH_URL=http://localhost:3000`; production will use its eventual canonical HTTPS origin. Do not copy Docker or MySQL recovery credentials into these environments.
+
+Install the [official CLI](https://infisical.com/docs/cli/install) with `brew install infisical/get-cli/infisical`, then run `infisical login` from the project directory. With the secrets populated, `npm run dev:cloud` starts the app using the explicit `dev` environment. `npm run db:migrate:cloud` and `npm run admin:create:cloud` also explicitly target `dev`. These commands check for all required injected values before any app code loads, preventing missing values from falling back to the old production `.env.local`. They fetch secrets at startup, adding no per-request secret-manager calls. Restart after changing secrets. Do not wrap the existing test commands with Infisical; tests still use the isolated Docker database.
+
+Connection status: CLI 0.45.10 is installed and authenticated. Infisical `dev` contains all seven required secrets; its pooled Neon endpoint differs from production. Its schema migration and optimized preview build passed. Both environments have the existing Gemini key and three AI limits. Production also has the existing production database URL and auth secret; development has a separately generated auth secret and `BETTER_AUTH_URL=http://localhost:3000`. Production's canonical `BETTER_AUTH_URL` will be set when hosting resumes.
+
+The owner requested a fresh production database. All 11 public app tables, including users, sessions, food, AI usage, and the import marker, were backed up to a private `.backups/neon-production-before-clear-*.json` file and transactionally emptied; schemas are preserved. Production therefore has no administrator or user accounts. The pre-launch AI usage ledger is retained in the backup. The phone preview now uses Infisical development. `npm run dev`, `db:migrate`, `admin:create`, `preview:build`, and `preview` all explicitly use `dev`; the `:cloud` variants remain aliases. Automated fixture suites continue to use isolated Docker Postgres, never production. The old `.env.local` is retained only for recovery and local test tooling; do not use its database URL for development. Environment files, backups, and local tool credentials are excluded from Git and deployment uploads.
+
+Use Node.js 22 and Docker Desktop. This workspace’s private `.env.local` now points `DATABASE_URL` at Neon. `NEON_DATABASE_URL` holds the same production target, and `MYSQL_SOURCE_DATABASE_URL` retains the original local source for recovery. Never commit these values. A private `.env.postgres.local` contains the separate local Postgres test connection; it is not deployed.
+
+For a fresh checkout, install the Infisical CLI, authenticate to this project, then run:
+
+```sh
+npm ci
+infisical login
+npm run db:migrate
+npm run admin:create
+npm run dev
+```
+
+The administrator script asks for a name, email, and a password without printing the password. It creates a new administrator; it does not promote an existing member. Local phone previews remain available through `npm run preview:build` and `npm run preview` on port 3000. Stop a preview before rebuilding its `.next-preview` directory. Vercel never trusts LAN origins; the local `LAN_PREVIEW=true` mode does.
+
+`npm run db:up` starts the local Postgres service; `npm run db:down` stops it while preserving the volume. The original MySQL service and its volume are left intact for recovery. Migrations run explicitly, never from a page request or automatically during Vercel builds.
+
+Tests must use a local Postgres database and a server connected to that SAME local database. They refuse a remote database; do not run the destructive fixture suite against Neon. For this workspace, load `.env.local` followed by `.env.postgres.local` in a parent process and spawn Next.js without Node’s `--env-file` in its own arguments (Next build workers cannot accept that flag via `NODE_OPTIONS`). Run a local Postgres test server on port 3001 with `BETTER_AUTH_URL=http://localhost:3001` and `LAN_PREVIEW=true`. Then run the backend/browser test commands with the same environment overlay and `TEST_BASE_URL` pointing to that server. Existing real accounts in the local copy are preserved; fixtures use unique emails and remove only their own rows.
+
+The current migration passed all 40 backend checks and all 18 desktop/mobile browser scenarios (the photo-retry scenarios were rechecked after a Postgres alias fix). The Neon-backed LAN app also passed a live signup → Gemini draft → explicit confirmation → chat reset check, preserving the confirmed meal after reset. That temporary account and its food records were removed; actual API cost accounting was retained.
+
+### Database migration and Vercel deployment
+
+The app uses native Postgres queries and a small query/transaction wrapper over `pg`; Better Auth receives the native `pg.Pool`. Hosted connections verify TLS certificates. Each app instance has a small pool with idle expiry; `@vercel/functions` manages pool cleanup before Vercel instances suspend. `vercel.json` places server functions in Singapore (`sin1`) near the Neon database.
+
+`scripts/import-mysql.ts` reads only the original local MySQL database in a consistent read-only snapshot and imports into a migrated, empty Postgres target. It writes a private `.backups/` recovery snapshot, verifies every imported field and row count, and commits atomically. An import marker makes an identical retry a no-op; different data or a nonempty unmarked target is rejected. Password hashes are copied unchanged, so existing passwords keep working. Sessions, verification tokens, temporary chat, and cached estimates are omitted. Users sign in again. The verified source snapshot had 2 accounts, 3 food entries, 1 AI budget row, and 12 AI usage rows.
+
+Deployment will connect Vercel to `https://github.com/koshanqari/health-app`. Production uses Infisical `prod`; Vercel Preview must use `dev`. Production needs `DATABASE_URL` (Neon’s pooled URL), server-only `BETTER_AUTH_SECRET`, `GEMINI_API_KEY`, and the existing AI limits. `BETTER_AUTH_URL` can be set to the canonical HTTPS domain; otherwise the app uses Vercel’s production URL environment variable. Only exact canonical/deployment origins are trusted. Never set `LAN_PREVIEW` on Vercel. `.vercelignore` excludes environment files, private backups, local build outputs, and tool credentials. No secrets are passed as CLI arguments or bundled into browser code.
+
+Deployment status: Neon development is connected, migrated, and serving the local phone preview. Production app tables were cleared for launch. The owner requested an initial GitHub push followed by connecting Vercel through GitHub; no Vercel deployment has been published yet.
+
+### Connect Google photo analysis
+
+1. Open [Google AI Studio API keys](https://aistudio.google.com/apikey), select or create a Google Cloud project, and create a Gemini API key. Only that API key is needed; no OAuth client ID or service-account JSON is required.
+2. In [AI Studio billing](https://aistudio.google.com/billing), enable billing for the same project and start with a $5 prepaid purchase where offered. Keep auto-reload disabled. Google billing rules and minimums are documented in the [billing guide](https://ai.google.dev/gemini-api/docs/billing).
+3. Put the key into the existing empty `GEMINI_API_KEY=` entry in `.env.local`. Never use a `NEXT_PUBLIC_` name or send the key in chat. The model is configured in server code as `gemini-3.1-flash-lite`; the key must have access to the Gemini/Generative Language API.
+4. Restart the local app so it reads the key. For the current production phone preview, stop `npm run preview` and start it again. A key-only change does not require rebuilding the preview.
+5. Open the center AI tab to chat with Kay, describe a meal or attach photos, and review the estimate before saving. Use the Food tab for the journal and manual entries. Compare several photos against known meals before relying on the estimates. The initial live connection check passed; representative meal estimates and ongoing usage still need checking.
+
+Optional server settings in `.env.example`: `AI_MONTHLY_BUDGET_USD=1.00` (shared app allowance), `AI_DAILY_LIMIT=10` (AI requests per user), and `AI_GLOBAL_DAILY_LIMIT=50` (AI requests across the whole app). A zero allowance pauses new requests. Raising these changes app limits, not Google’s billing settings. The monthly setting accepts up to $10; daily limits up to 100 per member and 1,000 globally. Keep these conservative while checking real token usage.
+
+
+
+### Temporary conversations and chat layout
+
+Kay now opens a fresh conversation on the first AI-tab visit after page load or refresh. Switching tabs preserves the active chat, composer, and photo attachments. New chat explicitly clears messages and unsaved drafts; there is no History button. Server context is kept only for the active conversation until the next reset, which also clears cached chat responses. Saved food entries and token/cost accounting remain intact. A reset invalidates in-flight replies so they cannot restore the previous conversation.
+
+The AI screen uses the available viewport height: the separate Kay/title/subtitle/Open journal header, disclosure below the composer, and AI-screen footer were removed. A small New chat action sits above the conversation. The composer sits just above the bottom navigation, and the conversation scrolls within the remaining space. Saved AI entries use the AI estimate label, which remains accurate after their temporary chat is cleared.
