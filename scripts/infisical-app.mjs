@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 // Check injected values before Next.js can fill gaps from the old .env.local.
-const required = ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "GEMINI_API_KEY", "AI_MONTHLY_BUDGET_USD", "AI_DAILY_LIMIT", "AI_GLOBAL_DAILY_LIMIT"];
+const required = ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "GEMINI_API_KEY", "AI_MONTHLY_BUDGET_USD", "AI_GLOBAL_DAILY_LIMIT"];
 const missing = required.filter(key => !process.env[key]?.trim());
 if (missing.length) {
   console.error(`Missing Infisical development secrets: ${missing.join(", ")}. Nothing was started.`);

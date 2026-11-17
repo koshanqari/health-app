@@ -16,7 +16,7 @@ export class FoodAiError extends Error {
 }
 
 export type FoodAiSettings = {
-  apiKey: string; scope: string; userDailyLimit: number; globalDailyLimit: number; monthlyBudgetMicros: number;
+  apiKey: string; scope: string; globalDailyLimit: number; monthlyBudgetMicros: number;
 };
 type EstimateResult = { isFood: true; food: Omit<FoodEstimate, "analysisId"> } | { isFood: false };
 const nonFood = () => new FoodAiError(422, "NO_FOOD", "We couldn’t identify the food clearly. Try another photo or enter the nutrition manually.");
@@ -32,7 +32,6 @@ export function foodAiSettings(): FoodAiSettings {
   if (!/^\d+(\.\d{1,2})?$/.test(budget) || Number(budget) > 10) throw new FoodAiError(503, "AI_CONFIG", "Photo analysis is unavailable. You can still log food manually.");
   return {
     apiKey: process.env.GEMINI_API_KEY?.trim() ?? "", scope: "food",
-    userDailyLimit: limit("AI_DAILY_LIMIT", 10, 100),
     globalDailyLimit: limit("AI_GLOBAL_DAILY_LIMIT", 50, 1000),
     monthlyBudgetMicros: Math.round(Number(budget) * 1_000_000),
   };
@@ -60,13 +59,13 @@ export async function foodAiStatus(userId: string, settings = foodAiSettings()):
   await db.execute("UPDATE \"foodAiUsage\" SET \"resultJson\" = NULL, \"cacheExpiresAt\" = NULL WHERE \"cacheExpiresAt\" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')");
   const { used, day } = await usage(settings);
   const [counts] = await db.execute<DatabaseRow[]>(
-    "SELECT COUNT(*)::integer AS total, COALESCE(SUM(CASE WHEN \"userId\" = $1 THEN 1 ELSE 0 END)::integer, 0) AS own FROM \"foodAiUsage\" WHERE scope = $2 AND \"createdAt\" >= $3",
-    [userId, settings.scope, day],
+    "SELECT COUNT(*)::integer AS total FROM \"foodAiUsage\" WHERE scope = $1 AND \"createdAt\" >= $2",
+    [settings.scope, day],
   );
   return {
     credits: publicCreditStatus(await getCreditDetails(userId, false)),
     configured: !!settings.apiKey,
-    remainingToday: Math.max(0, Math.min(settings.userDailyLimit - Number(counts[0].own), settings.globalDailyLimit - Number(counts[0].total))),
+    remainingToday: Math.max(0, settings.globalDailyLimit - Number(counts[0].total)),
     monthlyBudgetUsd: settings.monthlyBudgetMicros / 1_000_000,
     remainingBudgetUsd: Math.max(0, settings.monthlyBudgetMicros - used) / 1_000_000,
   };
@@ -94,14 +93,14 @@ async function reserve(userId: string, hash: string, settings: FoodAiSettings) {
     );
     if (pending.length) throw new FoodAiError(409, "AI_PENDING", "This request is already being processed. Please wait a moment.");
     const [counts] = await connection.execute<DatabaseRow[]>(
-      "SELECT COUNT(*)::integer AS total, COALESCE(SUM(CASE WHEN \"userId\" = $1 THEN 1 ELSE 0 END)::integer, 0) AS own FROM \"foodAiUsage\" WHERE scope = $2 AND \"createdAt\" >= $3",
-      [userId, settings.scope, day],
+      "SELECT COUNT(*)::integer AS total FROM \"foodAiUsage\" WHERE scope = $1 AND \"createdAt\" >= $2",
+      [settings.scope, day],
     );
-    if (Number(counts[0].own) >= settings.userDailyLimit || Number(counts[0].total) >= settings.globalDailyLimit) {
-      throw new FoodAiError(429, "AI_DAILY_LIMIT", "The AI allowance is used up for today. You can still log food manually.");
+    if (Number(counts[0].total) >= settings.globalDailyLimit) {
+      throw new FoodAiError(429, "AI_DAILY_LIMIT", "Kay has reached today’s shared usage limit. Your credits are unchanged.");
     }
     if (Number(budget[0].usedMicros) + RESERVATION_MICROS > settings.monthlyBudgetMicros) {
-      throw new FoodAiError(429, "AI_MONTHLY_LIMIT", "The monthly AI allowance is used up. You can still log food manually.");
+      throw new FoodAiError(429, "AI_MONTHLY_LIMIT", "Kay has reached the app’s shared spending limit. Your credits are unchanged.");
     }
     const credit = await reserveCredits(connection, userId);
     const id = randomUUID();

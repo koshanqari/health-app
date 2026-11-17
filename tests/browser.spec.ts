@@ -18,7 +18,7 @@ const password = `Browser-${randomUUID()}!`;
 const aiScope = `browser-ai-${run}`;
 const aiQuota = { configured: true, remainingToday: 9, monthlyBudgetUsd: 1, remainingBudgetUsd: .99 };
 let memberId: string;
-const chatSettings: FoodAiSettings = { apiKey: "browser-fake-key", scope: aiScope, userDailyLimit: 100, globalDailyLimit: 100, monthlyBudgetMicros: 1000000 };
+const chatSettings: FoodAiSettings = { apiKey: "browser-fake-key", scope: aiScope, globalDailyLimit: 100, monthlyBudgetMicros: 1000000 };
 
 const browserIssues = new WeakMap<Page, string[]>();
 
@@ -988,4 +988,23 @@ test("admin credit controls add an offline top-up, change user pricing and show 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // Leave later scenarios at the default rate.
   await db.execute('UPDATE "creditWallet" SET "multiplierHundred" = 200 WHERE "userId" = $1', [memberId]);
+});
+
+test("shared AI limits explain the pause without claiming that user credits are exhausted", async ({ page }) => {
+  let monthly = false;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() === "POST") return route.fallback();
+    const response = await route.fetch(), body = await response.json();
+    if (response.ok()) body.quota = { ...body.quota, configured: true, remainingToday: monthly ? 50 : 0, remainingBudgetUsd: monthly ? 0 : .99, credits: { balance: 20, available: 20, estimatedReplies: 61, canSend: true } };
+    await route.fulfill({ response, json: body });
+  });
+  await chatLogin(page);
+  await expect(page.getByRole("button", { name: "View AI credits", exact: true })).toContainText("20.00");
+  await expect(page.getByText("Kay’s shared daily limit is reached. Your credits are unchanged.", { exact: true })).toBeVisible();
+  await page.getByLabel("Your message", { exact: true }).fill("I still have credits");
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  monthly = true;
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(page.getByText("Kay’s shared spending limit is reached. Your credits are unchanged.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View AI credits", exact: true })).toContainText("20.00");
 });

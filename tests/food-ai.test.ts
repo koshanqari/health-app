@@ -14,7 +14,7 @@ let photo: Buffer;
 const meal = { isFood: true, name: "Dal and rice", calories: 430, fat: 10, protein: 15, carbs: 70, assumptions: "One bowl each of dal and rice, including cooking oil." };
 function settings(overrides: Partial<FoodAiSettings> = {}): FoodAiSettings {
   const scope = "ai-test-" + randomUUID(); scopes.push(scope);
-  return { apiKey: "test-secret-never-a-real-key", scope, userDailyLimit: 10, globalDailyLimit: 50, monthlyBudgetMicros: 1_000_000, ...overrides };
+  return { apiKey: "test-secret-never-a-real-key", scope, globalDailyLimit: 50, monthlyBudgetMicros: 1_000_000, ...overrides };
 }
 function provider(value: unknown = meal, finishReason = "STOP"): typeof fetch {
   return async () => Response.json({ candidates: [{ finishReason, content: { parts: [{ text: JSON.stringify(value) }] } }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: 20 } });
@@ -80,7 +80,7 @@ test("structured estimates use bounded Gemini requests, settle usage, cache per 
     return provider()(url, init);
   };
   const first = await analyzeFoodPhoto(users[0].id, photo, " I ate half ", { settings: config, fetcher });
-  assert.equal(first.draft.calories, 430); assert.equal(first.cached, false); assert.equal(first.quota.remainingToday, 9);
+  assert.equal(first.draft.calories, 430); assert.equal(first.cached, false); assert.equal(first.quota.remainingToday, 49);
   assert.equal(JSON.stringify(first).includes(config.apiKey), false);
   const again = await analyzeFoodPhoto(users[0].id, photo, "I ate half", { settings: config, fetcher });
   assert.equal(again.draft.analysisId, first.draft.analysisId); assert.equal(again.cached, true); assert.equal(calls, 1);
@@ -112,20 +112,29 @@ test("provider failures and cancellation consume a conservative allowance withou
   const config = settings();
   await assert.rejects(analyzeFoodPhoto(users[0].id, photo, "", { settings: config, fetcher: async () => new Response("SECRET provider diagnostic", { status: 403 }) }), error => code("AI_PROVIDER_AUTH")(error) && !(error as Error).message.includes("SECRET"));
   assert.equal(Number((await rows(config.scope))[0].costMicros), 10_000);
-  assert.equal((await foodAiStatus(users[0].id, config)).remainingToday, 9);
+  assert.equal((await foodAiStatus(users[0].id, config)).remainingToday, 49);
   await assert.rejects(analyzeFoodPhoto(users[0].id, photo, "retry", { settings: config, fetcher: async () => { throw new DOMException("cancel", "AbortError"); } }), code("AI_TIMEOUT"));
   assert.equal((await rows(config.scope)).length, 2);
   assert.equal((await foodAiStatus(users[0].id, config)).remainingBudgetUsd, .98);
 });
 
 test("daily allowances are shared atomically and cache hits do not spend another attempt", async () => {
-  const config = settings({ userDailyLimit: 1, globalDailyLimit: 2 });
+  const config = settings({ globalDailyLimit: 2 });
   await analyzeFoodPhoto(users[0].id, photo, "", { settings: config, fetcher: provider() });
   await analyzeFoodPhoto(users[0].id, photo, "", { settings: config, fetcher: provider() });
-  await assert.rejects(analyzeFoodPhoto(users[0].id, photo, "different", { settings: config, fetcher: provider() }), code("AI_DAILY_LIMIT"));
-  await analyzeFoodPhoto(users[1].id, photo, "", { settings: config, fetcher: provider() });
+  await analyzeFoodPhoto(users[0].id, photo, "different", { settings: config, fetcher: provider() });
+  await analyzeFoodPhoto(users[0].id, photo, "", { settings: config, fetcher: provider() }); // Cached even after the shared limit is reached.
   assert.equal((await foodAiStatus(users[1].id, config)).remainingToday, 0);
   await assert.rejects(analyzeFoodPhoto(users[1].id, photo, "different", { settings: config, fetcher: provider() }), code("AI_DAILY_LIMIT"));
+});
+
+test("credit-funded users can exceed the former ten-reply daily cap", async () => {
+  const config = settings({ globalDailyLimit: 50 }); let calls = 0;
+  const fetcher: typeof fetch = async (...args) => { calls++; return provider()(...args); };
+  for (let index = 0; index < 11; index++) await analyzeFoodPhoto(users[0].id, photo, "Daily-cap regression " + index, { settings: config, fetcher });
+  const status = await foodAiStatus(users[0].id, config);
+  assert.equal(calls, 11); assert.equal(status.remainingToday, 39);
+  assert.ok(status.credits!.available > 0); assert.equal(status.credits!.canSend, true);
 });
 
 test("concurrent requests reserve the budget before calling Google and deduplicate pending photos", async () => {

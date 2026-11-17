@@ -7,7 +7,7 @@ import { FoodAiError, requestFoodAi, type FoodAiSettings } from "../src/lib/food
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
 const users: { id: string; cookie: string }[] = [], scopes: string[] = [];
-const config = (): FoodAiSettings => { const scope = "credits-" + randomUUID(); scopes.push(scope); return { scope, apiKey: "fake", userDailyLimit: 100, globalDailyLimit: 100, monthlyBudgetMicros: 1_000_000 }; };
+const config = (): FoodAiSettings => { const scope = "credits-" + randomUUID(); scopes.push(scope); return { scope, apiKey: "fake", globalDailyLimit: 100, monthlyBudgetMicros: 1_000_000 }; };
 const hash = () => createHash("sha256").update(randomUUID()).digest("hex");
 const reply: typeof fetch = async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: '{"ok":true}' }] } }], usageMetadata: { promptTokenCount: 3000, candidatesTokenCount: 500 } });
 const run = (settings: FoodAiSettings, fetcher = reply, key = hash()) => requestFoodAi(users[0].id, key, {}, value => value as { ok: boolean }, { settings, fetcher });

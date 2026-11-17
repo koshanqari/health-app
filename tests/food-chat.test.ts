@@ -13,7 +13,7 @@ const base = process.env.TEST_BASE_URL || "http://localhost:3000";
 const users: { id: string; cookie: string }[] = [], scopes: string[] = [];
 const meal = { name: "Poha and chai", calories: 360, fat: 12, protein: 9, carbs: 54, meal: "breakfast", category: "healthy", eatenAtLocal: parseFood({ calories: 0, fat: 0, protein: 0, carbs: 0, timeZone: "Asia/Kolkata" }).eatenAtLocal, assumptions: "One bowl of poha and one cup of chai.", targetEntryId: null };
 const code = (value: string) => (error: unknown) => error instanceof FoodAiError && error.code === value;
-function config(): FoodAiSettings { const scope = "chat-test-" + randomUUID(); scopes.push(scope); return { scope, apiKey: "fake-key", userDailyLimit: 100, globalDailyLimit: 100, monthlyBudgetMicros: 1_000_000 }; }
+function config(): FoodAiSettings { const scope = "chat-test-" + randomUUID(); scopes.push(scope); return { scope, apiKey: "fake-key", globalDailyLimit: 100, monthlyBudgetMicros: 1_000_000 }; }
 function mock(value: unknown = { intent: "draft", reply: "Here is your meal estimate. Review it before logging.", draft: meal }): typeof fetch {
   return async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(value) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
 }
