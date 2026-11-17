@@ -7,6 +7,7 @@ import { db } from "../src/lib/db";
 import sharp from "sharp";
 import { sendFoodChat } from "../src/lib/food-chat";
 import type { FoodAiSettings } from "../src/lib/food-ai";
+import { suggestedFoodGoals, suggestedMacros } from "../src/lib/food-goals";
 
 const baseURL = process.env.TEST_BASE_URL || "http://localhost:3000";
 const run = randomUUID().replaceAll("-", "");
@@ -290,6 +291,75 @@ test("daily goals suggest editable macros, persist, and update remaining amounts
   await page.getByRole("article", { name: "Goals test lunch", exact: true }).getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Delete entry", exact: true }).click();
   await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuenow", "0");
+});
+
+test("food history selects daily totals, colors achieved goals, swipes, and switches all four periods", async ({ page, context }, info) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
+  const created: string[] = [];
+  try {
+    const goal = await page.request.put("/api/food/goals", { headers: { Origin: baseURL }, data: suggestedFoodGoals() });
+    expect(goal.status()).toBe(200);
+    for (const [date, calories] of [["2020-01-20", 2300], ["2020-01-21", 1800], ["2020-01-22", 2600], ["2020-01-23", 2400]] as const) {
+      const response = await page.request.post("/api/food", { headers: { Origin: baseURL }, data: { name: "History test meal", calories, ...suggestedMacros(calories), eatenAtLocal: date + "T12:00", timeZone: "Asia/Kolkata" } });
+      expect(response.status()).toBe(201); created.push((await response.json()).id);
+    }
+    await page.getByLabel("Journal date", { exact: true }).fill("2020-01-22");
+    const history = page.getByRole("region", { name: "Food goal history" });
+    await expect(history.locator('.history-bar[data-date="2020-01-20"]')).toHaveAttribute("data-status", "achieved");
+    await expect(history.locator('.history-bar[data-date="2020-01-21"]')).toHaveAttribute("data-status", "outside");
+    await expect(history.locator('.history-bar[data-date="2020-01-22"]')).toHaveAttribute("data-status", "outside");
+    await expect(history.locator('.history-bar[data-date="2020-01-24"]')).toHaveAttribute("data-status", "unlogged");
+    await expect(history.locator(".history-achievement")).toContainText("2 days");
+    const canvas = history.getByRole("group", { name: "Daily nutrition chart. Use arrow keys to select a day." });
+    await canvas.scrollIntoViewIfNeeded();
+    let box = (await canvas.boundingBox())!;
+    await canvas.click({ position: { x: box.width / 14, y: 120 } });
+    await expect(history.locator(".history-value strong")).toHaveText("2,300");
+    await expect(history.locator(".history-detail")).toContainText("20 Jan 2020");
+    await expect(page.getByLabel("Journal date", { exact: true })).toHaveValue("2020-01-20");
+    await canvas.focus(); await canvas.press("ArrowRight");
+    await expect(history.locator(".history-value strong")).toHaveText("1,800");
+    await expect(history.locator(".history-detail")).toContainText("Outside goal range");
+    await history.getByRole("group", { name: "History nutrient" }).getByRole("button", { name: "Protein", exact: true }).click();
+    await expect(history.locator(".history-value strong")).toHaveText("112.5");
+    await canvas.scrollIntoViewIfNeeded(); box = (await canvas.boundingBox())!;
+    if (info.project.name === "mobile") {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width * .2, y: box.y + 120 }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + box.width * .8, y: box.y + 120 }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp.detach();
+    } else {
+      await page.mouse.move(box.x + box.width * .2, box.y + 120); await page.mouse.down();
+      await page.mouse.move(box.x + box.width * .8, box.y + 120, { steps: 5 }); await page.mouse.up();
+    }
+    await expect(history.locator('.history-bar[data-date="2020-01-13"]')).toHaveCount(1);
+    await history.getByRole("button", { name: "Next period", exact: true }).click();
+    await expect(history.locator('.history-bar[data-date="2020-01-20"]')).toHaveCount(1);
+    for (const [period, count] of [["M", 31], ["6M", 184], ["Y", 366]] as const) {
+      await history.getByRole("group", { name: "History period" }).getByRole("button", { name: period, exact: true }).click();
+      await expect(history.locator(".history-bar")).toHaveCount(count);
+    }
+    await history.getByRole("group", { name: "History period" }).getByRole("button", { name: "W", exact: true }).click();
+    await expect(history.locator(".history-bar")).toHaveCount(7);
+    await history.getByRole("group", { name: "History nutrient" }).getByRole("button", { name: "Calories", exact: true }).click();
+    await expect(history.getByRole("button", { name: "D", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await history.scrollIntoViewIfNeeded();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await history.screenshot({ path: `/private/tmp/daywell-${info.project.name}-food-history.png` });
+    const deleted = await page.request.delete("/api/food", { headers: { Origin: baseURL }, data: { id: created[0] } });
+    expect(deleted.status()).toBe(200); created.shift();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("food-chat-saved", { detail: "2020-01-20" })));
+    await expect(history.locator('.history-bar[data-date="2020-01-20"]')).toHaveAttribute("data-status", "unlogged");
+    await expect(history.locator(".history-achievement")).toContainText("1 day");
+  } finally {
+    for (const id of created) await page.request.delete("/api/food", { headers: { Origin: baseURL }, data: { id } });
+  }
 });
 
 test("tabs switch without network, preserve journal state, and support browser history", async ({ page, context }, info) => {

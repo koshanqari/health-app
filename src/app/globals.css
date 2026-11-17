@@ -464,3 +464,57 @@ h1, h2, h3 { line-height: 1.2; }
 .ai-main .chat-thread { min-height: 0; }
 .ai-workspace .bottom-nav { position: static; transform: none; flex-shrink: 0; margin: 0 auto 20px; }
 @media (max-width: 700px) { .ai-workspace .bottom-nav { margin: 0; } }
+
+/* Daily nutrition history */
+.food-history { margin-top: 28px; padding: 26px 28px; border: 1px solid var(--line); border-radius: 26px; background: var(--surface); }
+.history-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.history-heading h2 { font-size: 19px; font-weight: 800; }
+.history-periods { display: grid; grid-template-columns: repeat(4, 1fr); padding: 4px; border-radius: 24px; background: #edf0e9; min-width: 240px; }
+.history-periods button { min-height: 34px; padding: 5px 16px; border: 0; border-radius: 20px; color: var(--muted); background: transparent; font: inherit; font-size: 13px; font-weight: 750; }
+.history-periods button[aria-pressed="true"] { background: var(--surface); color: var(--accent-text); box-shadow: 0 1px 3px #26372912; }
+.history-metrics { display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid var(--line); margin-top: 16px; }
+.history-metrics button { padding: 10px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 13px; }
+.history-metrics button[aria-pressed="true"] { color: var(--accent-text); border-bottom-color: var(--accent-text); font-weight: 800; }
+.history-period-navigation { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 14px 0 18px; }
+.history-period-navigation > span { color: var(--muted); font-size: 13px; text-align: center; }
+.history-period-navigation button:disabled { opacity: .3; cursor: default; }
+.history-inspection { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; min-height: 102px; }
+.history-caption { color: var(--muted); font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .8px; }
+.history-value { display: flex; align-items: baseline; gap: 10px; margin: 4px 0; }
+.history-value strong { font-size: 40px; line-height: 1.15; font-weight: 800; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.history-value > span { color: var(--muted); font-size: 16px; }
+.history-detail { color: var(--muted); font-size: 12px; }
+.history-inspection > .text-button { font-size: 11px; padding: 4px 0; }
+.history-day-macros { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 11px; min-height: 20px; margin: 0 0 12px; }
+.history-graph { position: relative; padding-right: 38px; margin-top: 16px; }
+.history-canvas { height: 240px; touch-action: pan-y; cursor: crosshair; border-radius: 2px; }
+.history-canvas svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.history-gridline { stroke: #dfe6dc; stroke-width: 1; }
+.history-goal-band { fill: #e6f4ea; }
+.history-bar { fill: #a8dab5; }
+.history-bar.history-achieved { fill: #147c36; }
+.history-bar.history-unlogged, .history-bar.history-future { fill: #dfe6dc; }
+.history-selection { stroke: #30343b; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
+.history-y-axis { position: absolute; right: 0; top: -7px; height: 254px; display: flex; flex-direction: column; justify-content: space-between; color: var(--muted); font-size: 10px; text-align: right; }
+.history-x-axis { position: relative; height: 32px; margin-right: 0; padding-top: 8px; color: var(--muted); font-size: 11px; }
+.history-x-axis > span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.history-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; color: var(--muted); font-size: 11px; }
+.history-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.history-legend i { width: 9px; height: 9px; border-radius: 3px; }
+.history-achieved-dot { background: #147c36; }
+.history-outside-dot { background: #a8dab5; }
+.history-achievement { margin-top: 14px; color: var(--ink); font-size: 13px; }
+.history-achievement strong { color: var(--accent-text); }
+.history-footnote { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.history-loading { min-height: 400px; padding-top: 24px; color: var(--muted); font-size: 13px; }
+@media (max-width: 700px) {
+  .food-history { padding: 20px; border-radius: 24px; }
+  .history-heading { align-items: stretch; flex-direction: column; gap: 14px; }
+  .history-periods { min-width: 0; }
+  .history-periods button { padding-left: 10px; padding-right: 10px; }
+  .history-metrics { gap: 0; justify-content: space-between; }
+  .history-metrics button { font-size: 12px; }
+  .history-value strong { font-size: 36px; }
+  .history-period-navigation > span { font-size: 11px; }
+  .history-day-macros { font-size: 10px; gap: 4px 10px; }
+}
