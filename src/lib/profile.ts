@@ -6,13 +6,13 @@ export const profileAvatars = [
   { id: "bunny", label: "Bunny" }, { id: "panda", label: "Panda" },
 ] as const;
 export type ProfileAvatarId = typeof profileAvatars[number]["id"];
-export type ProfileDetails = { name: string; dateOfBirth: string | null; sex: ProfileSex | null; avatarId: ProfileAvatarId | null };
+export type ProfileDetails = { name: string; dateOfBirth: string | null; sex: ProfileSex | null; avatarId: ProfileAvatarId | null; heightCm: number | null };
 export type UserProfile = ProfileDetails & { id: string; email: string; role: string };
 
 export function parseProfile(value: unknown, existing?: ProfileDetails, now = new Date()): ProfileDetails {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Check your profile details.");
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !["name", "dateOfBirth", "sex", "avatarId", "timeZone"].includes(key))) throw new Error("Only your name, date of birth, sex and preset picture can be changed here.");
+  if (Object.keys(input).some(key => !["name", "dateOfBirth", "sex", "avatarId", "heightCm", "timeZone"].includes(key))) throw new Error("Only your name, date of birth, sex, height and preset picture can be changed here.");
   const data: Record<string, unknown> = { ...existing, ...input };
   if (typeof data.name !== "string" || !data.name.trim() || data.name.trim().length > 80 || /[\u0000-\u001f\u007f]/.test(data.name)) throw new Error("Enter a name between 1 and 80 characters.");
   const timeZone = input.timeZone ?? "UTC";
@@ -32,5 +32,7 @@ export function parseProfile(value: unknown, existing?: ProfileDetails, now = ne
   if (sex !== null && !profileSexOptions.includes(sex as ProfileSex)) throw new Error("Choose a valid sex option, or leave it unset.");
   const avatarId = data.avatarId === "" || data.avatarId == null ? null : data.avatarId;
   if (avatarId !== null && !profileAvatars.some(avatar => avatar.id === avatarId)) throw new Error("Choose one of the preset profile pictures.");
-  return { name: data.name.trim(), dateOfBirth, sex: sex as ProfileSex | null, avatarId: avatarId as ProfileAvatarId | null };
+  const heightCm = data.heightCm === "" || data.heightCm == null ? null : data.heightCm;
+  if (heightCm !== null && (typeof heightCm !== "number" || !Number.isFinite(heightCm) || heightCm <= 0 || heightCm > 300 || Math.abs(heightCm * 10 - Math.round(heightCm * 10)) > .000001)) throw new Error("Enter a height above 0 and up to 300 cm, with at most one decimal place.");
+  return { name: data.name.trim(), dateOfBirth, sex: sex as ProfileSex | null, avatarId: avatarId as ProfileAvatarId | null, heightCm };
 }

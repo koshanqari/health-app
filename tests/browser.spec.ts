@@ -704,6 +704,7 @@ test("profile edits persist and return to the same tab without losing journal or
   await expect(profile.getByLabel("Email", { exact: true })).toHaveJSProperty("readOnly", true);
   await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("");
   await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("");
+  await expect(profile.getByLabel("Height (cm)", { exact: true })).toHaveValue("");
   await expect(profile.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
   if (info.project.name === "mobile") {
     const bounds = (await profile.boundingBox())!;
@@ -713,6 +714,7 @@ test("profile edits persist and return to the same tab without losing journal or
   await profile.getByLabel("Name", { exact: true }).fill("Jordan Bloom");
   await profile.getByLabel("Date of birth", { exact: true }).fill("1992-02-29");
   await profile.getByLabel("Sex", { exact: true }).selectOption("intersex");
+  await profile.getByLabel("Height (cm)", { exact: true }).fill("175.5");
   await profile.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(profile.getByRole("status")).toHaveText("Profile saved.");
   await expect(page.locator("#main-content h1").filter({ hasText: "Hi, Jordan." })).toHaveCount(1);
@@ -730,6 +732,7 @@ test("profile edits persist and return to the same tab without losing journal or
   await page.getByRole("button", { name: "Open profile", exact: true }).click();
   await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("1992-02-29");
   await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("intersex");
+  await expect(profile.getByLabel("Height (cm)", { exact: true })).toHaveValue("175.5");
   await page.goBack();
   await expect(profile).not.toBeVisible();
   await page.goForward();

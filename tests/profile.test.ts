@@ -26,7 +26,7 @@ after(async () => {
 });
 
 test("profile validation accepts optional details, real leap dates and local-day boundaries", () => {
-  assert.deepEqual(parseProfile({ name: "  Jordan  " }), { name: "Jordan", dateOfBirth: null, sex: null, avatarId: null });
+  assert.deepEqual(parseProfile({ name: "  Jordan  " }), { name: "Jordan", dateOfBirth: null, sex: null, avatarId: null, heightCm: null });
   assert.equal(parseProfile({ name: "Jordan", dateOfBirth: "2000-02-29", sex: "prefer_not_to_say" }).dateOfBirth, "2000-02-29");
   assert.equal(parseProfile({ name: "Jordan", dateOfBirth: "2026-01-02", timeZone: "Asia/Kolkata" }, undefined, new Date("2026-01-01T20:00:00Z")).dateOfBirth, "2026-01-02");
   for (const body of [{ name: " " }, { name: "x".repeat(81) }, { name: "x\u0000" }, { name: 1 }, { name: "Jordan", dateOfBirth: "1900-02-29" }, { name: "Jordan", dateOfBirth: "2100-01-01" }, { name: "Jordan", dateOfBirth: "1899-12-31" }, { name: "Jordan", sex: "invalid" }, { name: "Jordan", timeZone: "Not/AZone" }, { name: "Jordan", email: "other@example.com" }]) assert.throws(() => parseProfile(body));
@@ -91,4 +91,17 @@ test("only built-in avatar IDs are accepted, saved per user, and preserved by pa
   assert.equal((await (await get()).json()).user.avatarId, "panda");
   assert.equal((await patch({ avatarId: null })).status, 200);
   assert.equal((await (await get()).json()).user.avatarId, null);
+});
+
+test("optional height persists as centimetres, survives partial edits, and can be cleared", async () => {
+  for (const heightCm of [NaN, Infinity, -1, 0, 300.1, 175.55, "175.5"]) assert.throws(() => parseProfile({ name: "Jordan", heightCm }));
+  assert.equal((await patch({ heightCm: 175.5 })).status, 200);
+  assert.equal((await (await get()).json()).user.heightCm, 175.5);
+  assert.equal((await (await get(cookies[1])).json()).user.heightCm, null);
+  assert.equal((await patch({ name: "Height Test" })).status, 200);
+  assert.equal((await (await get()).json()).user.heightCm, 175.5);
+  for (const heightCm of [-1, 0, 301, 175.55, "175.5", {}]) assert.equal((await patch({ heightCm })).status, 400);
+  assert.equal((await (await get()).json()).user.heightCm, 175.5);
+  assert.equal((await patch({ heightCm: null })).status, 200);
+  assert.equal((await (await get()).json()).user.heightCm, null);
 });

@@ -19,6 +19,8 @@ try {
     `);
     await connection.execute(`ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "avatarId" TEXT
       CHECK ("avatarId" IN ('apple', 'sprout', 'cat', 'bear', 'bunny', 'panda'))`);
+    await connection.execute(`ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "heightCm" NUMERIC(4,1)
+      CHECK ("heightCm" > 0 AND "heightCm" <= 300)`);
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodGoal" (
         "userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,

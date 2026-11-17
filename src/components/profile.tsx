@@ -9,10 +9,10 @@ import { SignOut } from "./sign-out";
 export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (user: UserProfile) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [draft, setDraft] = useState<{ name: string; dateOfBirth: string; sex: string; avatarId: ProfileAvatarId | null }>({ name: "", dateOfBirth: "", sex: "", avatarId: null });
+  const [draft, setDraft] = useState<{ name: string; dateOfBirth: string; sex: string; heightCm: string; avatarId: ProfileAvatarId | null }>({ name: "", dateOfBirth: "", sex: "", heightCm: "", avatarId: null });
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [error, setError] = useState(""), [saved, setSaved] = useState(false), [retry, setRetry] = useState(0);
-  const dirty = !!user && (draft.name.trim() !== user.name || draft.dateOfBirth !== (user.dateOfBirth ?? "") || draft.sex !== (user.sex ?? "") || draft.avatarId !== (user.avatarId ?? null));
+  const dirty = !!user && (draft.name.trim() !== user.name || draft.dateOfBirth !== (user.dateOfBirth ?? "") || draft.sex !== (user.sex ?? "") || draft.avatarId !== (user.avatarId ?? null) || draft.heightCm !== (user.heightCm == null ? "" : String(user.heightCm)));
 
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
   useEffect(() => {
@@ -20,7 +20,7 @@ export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (u
     setLoading(true); setError("");
     fetch("/api/account", { cache: "no-store", signal: controller.signal })
       .then(async response => { const body = await response.json(); if (!response.ok) throw new Error(body.message || "We couldn’t load your profile."); return body.user as UserProfile; })
-      .then(value => { if (!controller.signal.aborted) { setUser(value); setDraft({ name: value.name, dateOfBirth: value.dateOfBirth ?? "", sex: value.sex ?? "", avatarId: value.avatarId ?? null }); } })
+      .then(value => { if (!controller.signal.aborted) { setUser(value); setDraft({ name: value.name, dateOfBirth: value.dateOfBirth ?? "", sex: value.sex ?? "", heightCm: value.heightCm == null ? "" : String(value.heightCm), avatarId: value.avatarId ?? null }); } })
       .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "We couldn’t load your profile."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -31,11 +31,11 @@ export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (u
     if (!user || !dirty || busy || !draft.name.trim()) return;
     setBusy(true); setError(""); setSaved(false);
     try {
-      const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) });
+      const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, heightCm: draft.heightCm.trim() ? Number(draft.heightCm) : null, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || "We couldn’t save your profile.");
       const updated = body.user as UserProfile;
-      setUser(updated); setDraft({ name: updated.name, dateOfBirth: updated.dateOfBirth ?? "", sex: updated.sex ?? "", avatarId: updated.avatarId ?? null });
+      setUser(updated); setDraft({ name: updated.name, dateOfBirth: updated.dateOfBirth ?? "", sex: updated.sex ?? "", heightCm: updated.heightCm == null ? "" : String(updated.heightCm), avatarId: updated.avatarId ?? null });
       setSaved(true); onSaved(updated);
     } catch (error) { setError(error instanceof Error ? error.message : "We couldn’t save your profile. Please try again."); }
     finally { setBusy(false); }
@@ -59,8 +59,9 @@ export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (u
           <div className="food-detail-row"><label htmlFor="profile-email">Email</label><input id="profile-email" type="email" autoComplete="email" readOnly value={user.email} /></div>
           <div className="food-detail-row"><label htmlFor="profile-dob">Date of birth</label><input id="profile-dob" type="date" autoComplete="bday" min="1900-01-01" max={localDateTime().slice(0, 10)} value={draft.dateOfBirth} onChange={event => { setDraft(current => ({ ...current, dateOfBirth: event.target.value })); setSaved(false); }} /></div>
           <div className="food-detail-row"><label htmlFor="profile-sex">Sex</label><select id="profile-sex" value={draft.sex} onChange={event => { setDraft(current => ({ ...current, sex: event.target.value })); setSaved(false); }}><option value="">Not set</option><option value="female">Female</option><option value="male">Male</option><option value="intersex">Intersex</option><option value="prefer_not_to_say">Prefer not to say</option></select></div>
+          <div className="food-detail-row"><label htmlFor="profile-height">Height (cm)</label><input id="profile-height" type="number" inputMode="decimal" min="0.1" max="300" step="0.1" placeholder="Not set" value={draft.heightCm} onChange={event => { setDraft(current => ({ ...current, heightCm: event.target.value })); setSaved(false); }} /></div>
         </div></fieldset>
-        <p className="profile-hint">Date of birth and sex are optional. Email is linked to your sign-in.</p>
+        <p className="profile-hint">Date of birth, sex and height are optional. Email is linked to your sign-in.</p>
         {error && <p className="form-error" role="alert">{error}</p>}
         {saved && <p className="profile-saved" role="status">Profile saved.</p>}
       </div>
