@@ -685,3 +685,78 @@ test("food chat enforces the photo limit without losing selected photos", async 
   await page.getByLabel("Photos show", { exact: true }).selectOption("meal");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("profile edits persist and return to the same tab without losing journal or chat state", async ({ page }, info) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await navigation.getByRole("link", { name: "Food", exact: true }).click();
+  await page.getByLabel("Journal date", { exact: true }).fill("2020-01-22");
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  const profile = page.getByRole("dialog", { name: "Profile", exact: true });
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Test Member");
+  await expect(profile.getByLabel("Email", { exact: true })).toHaveValue(memberEmail);
+  await expect(profile.getByLabel("Email", { exact: true })).toHaveJSProperty("readOnly", true);
+  await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("");
+  await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("");
+  await expect(profile.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  if (info.project.name === "mobile") {
+    const bounds = (await profile.boundingBox())!;
+    expect(bounds.x).toBe(0);
+    expect(bounds.width).toBe(await page.evaluate(() => innerWidth));
+  }
+  await profile.getByLabel("Name", { exact: true }).fill("Jordan Bloom");
+  await profile.getByLabel("Date of birth", { exact: true }).fill("1992-02-29");
+  await profile.getByLabel("Sex", { exact: true }).selectOption("intersex");
+  await profile.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(profile.getByRole("status")).toHaveText("Profile saved.");
+  await expect(page.locator("#main-content h1").filter({ hasText: "Hi, Jordan." })).toHaveCount(1);
+  await expect(page).toHaveURL(/profile=1/);
+  await expect(page.locator(".account-actions .avatar")).toHaveText("J");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-profile.png` });
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(profile).not.toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Food", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByLabel("Journal date", { exact: true })).toHaveValue("2020-01-22");
+  await navigation.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Hi, Jordan.", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("1992-02-29");
+  await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("intersex");
+  await page.goBack();
+  await expect(profile).not.toBeVisible();
+  await page.goForward();
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Jordan Bloom");
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(profile).not.toBeVisible();
+  await navigation.getByRole("link", { name: "AI", exact: true }).click();
+  await expect(page.getByLabel("Your message", { exact: true })).toBeEnabled();
+  await page.getByLabel("Your message", { exact: true }).fill("An unsent meal note");
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Jordan Bloom");
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("An unsent meal note");
+  await page.goto("/app?tab=food&profile=1");
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Jordan Bloom");
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(profile).not.toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Food", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("administrator avatar opens the private profile and returns to administration", async ({ page }) => {
+  await page.goto("/admin/login");
+  await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("link", { name: "Open profile", exact: true }).click();
+  const profile = page.getByRole("dialog", { name: "Profile", exact: true });
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Browser Administrator");
+  await expect(profile.getByLabel("Email", { exact: true })).toHaveValue(adminEmail);
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { name: "Hello, Browser.", exact: true })).toBeVisible();
+});

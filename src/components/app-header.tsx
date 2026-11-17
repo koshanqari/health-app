@@ -22,8 +22,8 @@ export function AppIcon({ name }: { name: AppTab }) {
   </svg>;
 }
 
-export function AppShell({ name, isAdmin = false, area = "member", activeTab = "home", children }: {
-  name: string; isAdmin?: boolean; area?: "member" | "admin"; activeTab?: AppTab; children: React.ReactNode;
+export function AppShell({ name, isAdmin = false, area = "member", activeTab = "home", children, onOpenProfile }: {
+  name: string; isAdmin?: boolean; area?: "member" | "admin"; activeTab?: AppTab; children: React.ReactNode; onOpenProfile?: () => void;
 }) {
   return <div className={area === "member" ? activeTab === "chat" ? "workspace has-bottom-nav ai-workspace" : "workspace has-bottom-nav" : "workspace"}>
     <header className="app-header">
@@ -31,7 +31,7 @@ export function AppShell({ name, isAdmin = false, area = "member", activeTab = "
         <Link href="/app" prefetch={false} className={area === "member" ? "nav-item active" : "nav-item"} aria-current={area === "member" ? "page" : undefined}>Your space</Link>
         <Link href="/admin" className={area === "admin" ? "nav-item active" : "nav-item"} aria-current={area === "admin" ? "page" : undefined}>Community</Link>
       </nav>}</div>
-      <div className="account-actions"><span className="avatar" role="img" aria-label={`Signed in as ${name}`}>{name.slice(0, 1).toUpperCase()}</span><SignOut /></div>
+      <div className="account-actions">{onOpenProfile ? <button type="button" className="avatar" aria-label="Open profile" title={`Profile · ${name}`} onClick={onOpenProfile}>{name.slice(0, 1).toUpperCase()}</button> : <Link className="avatar" aria-label="Open profile" href={area === "admin" ? "/app?profile=1&returnTo=admin" : "/app?profile=1"} prefetch={false}>{name.slice(0, 1).toUpperCase()}</Link>}<SignOut /></div>
     </header>
     {children}
     {!(area === "member" && activeTab === "chat") && <footer className="workspace-footer">Small steps. Your own pace.</footer>}

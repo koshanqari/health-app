@@ -21,9 +21,9 @@ function SmallSteps() {
   </svg>;
 }
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string }> }) {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string; profile?: string }> }) {
   const user = await requireUser();
-  const { notice, tab } = await searchParams;
+  const { notice, tab, profile } = await searchParams;
   const feature = features.find(item => item.id === tab);
   const activeTab: AppTab = tab === "chat" ? "chat" : feature?.id ?? "home";
   const firstName = user.name.trim().split(/\s+/)[0];
@@ -32,6 +32,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
     name={user.name}
     isAdmin={user.role === "admin"}
     initialTab={activeTab}
+    initialProfileOpen={profile === "1"}
     notice={notice === "admin-only" ? <div className="notice" role="status">The admin area is only available to administrators. You’re signed in to your member account.</div> : undefined}
     home={<>
         <p className="eyebrow">Your everyday, a little better</p>

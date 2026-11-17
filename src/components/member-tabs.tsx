@@ -4,17 +4,22 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type Rea
 import { AppShell, type AppTab } from "./app-header";
 import { FoodChat } from "./food-chat";
 import { FoodJournal } from "./food-journal";
+import { Profile } from "./profile";
+import { useRouter } from "next/navigation";
 
 const readTab = (search: string): AppTab => {
   const value = new URLSearchParams(search).get("tab");
   return value === "chat" || value === "food" || value === "activity" || value === "progress" ? value : "home";
 };
 
-export function MemberTabs({ name, isAdmin, initialTab, notice, home, activity, progress }: {
-  name: string; isAdmin: boolean; initialTab: AppTab; notice?: ReactNode;
+export function MemberTabs({ name, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress }: {
+  name: string; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
   home: ReactNode; activity: ReactNode; progress: ReactNode;
 }) {
   const [tab, setTab] = useState(initialTab);
+  const [profileOpen, setProfileOpen] = useState(initialProfileOpen);
+  const [displayName, setDisplayName] = useState(name);
+  const router = useRouter();
   const current = useRef(initialTab);
   const scrollPositions = useRef<Partial<Record<AppTab, number>>>({});
 
@@ -26,11 +31,28 @@ export function MemberTabs({ name, isAdmin, initialTab, notice, home, activity, 
   }
 
   useEffect(() => {
-    function restoreTab() { selectTab(readTab(window.location.search)); }
+    function restoreTab() { selectTab(readTab(window.location.search)); setProfileOpen(new URLSearchParams(window.location.search).get("profile") === "1"); }
     restoreTab();
     window.addEventListener("popstate", restoreTab);
     return () => window.removeEventListener("popstate", restoreTab);
   }, []);
+  useEffect(() => { setDisplayName(name); }, [name]);
+
+  function openProfile() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("profile", "1");
+    window.history.pushState({ daywellProfile: true }, "", url.pathname + url.search);
+    setProfileOpen(true);
+  }
+
+  function closeProfile() {
+    setProfileOpen(false);
+    const url = new URL(window.location.href);
+    if (isAdmin && url.searchParams.get("returnTo") === "admin") { router.replace("/admin"); return; }
+    if (window.history.state?.daywellProfile) { window.history.back(); return; }
+    url.searchParams.delete("profile"); url.searchParams.delete("returnTo");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }
 
   useLayoutEffect(() => {
     window.scrollTo({ top: scrollPositions.current[tab] ?? 0, behavior: "instant" });
@@ -51,7 +73,7 @@ export function MemberTabs({ name, isAdmin, initialTab, notice, home, activity, 
   }
 
   return <div onClickCapture={navigate}>
-    <AppShell name={name} isAdmin={isAdmin} activeTab={tab}>
+    <AppShell name={displayName} isAdmin={isAdmin} activeTab={tab} onOpenProfile={openProfile}>
       <main id="main-content" className={tab === "chat" ? "workspace-main member-main ai-main" : "workspace-main member-main"}>
         {notice}
         <div hidden={tab !== "home"}>{home}</div>
@@ -61,5 +83,6 @@ export function MemberTabs({ name, isAdmin, initialTab, notice, home, activity, 
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>
     </AppShell>
+    {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); router.refresh(); }} />}
   </div>;
 }
