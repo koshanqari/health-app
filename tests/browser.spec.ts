@@ -347,6 +347,25 @@ test("food history selects daily totals, colors achieved goals, swipes, and swit
     await history.getByRole("group", { name: "History period" }).getByRole("button", { name: "W", exact: true }).click();
     await expect(history.locator(".history-bar")).toHaveCount(7);
     await history.getByRole("group", { name: "History nutrient" }).getByRole("button", { name: "Calories", exact: true }).click();
+    const picker = history.getByLabel("Choose history date", { exact: true });
+    await picker.click();
+    await page.keyboard.press("Escape");
+    for (const [period, date, first, last] of [
+      ["W", "2020-02-06", "2020-02-03", "2020-02-09"],
+      ["M", "2020-03-15", "2020-03-01", "2020-03-31"],
+      ["6M", "2020-05-19", "2019-12-01", "2020-05-31"],
+      ["Y", "2021-06-09", "2021-01-01", "2021-12-31"],
+    ]) {
+      await history.getByRole("group", { name: "History period" }).getByRole("button", { name: period, exact: true }).click();
+      await picker.fill(date);
+      await expect(history.locator(".history-bar").first()).toHaveAttribute("data-date", first);
+      await expect(history.locator(".history-bar").last()).toHaveAttribute("data-date", last);
+      await expect(history.getByRole("group", { name: "History period" }).getByRole("button", { name: period, exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByLabel("Journal date", { exact: true })).toHaveValue(date);
+    }
+    await history.getByRole("group", { name: "History period" }).getByRole("button", { name: "W", exact: true }).click();
+    await picker.fill("2020-01-20");
+    await expect(history.locator('.history-bar[data-date="2020-01-20"]')).toHaveCount(1);
     await expect(history.getByRole("button", { name: "D", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await history.scrollIntoViewIfNeeded();

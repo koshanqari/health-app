@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { localDateTime } from "@/lib/food";
+import { isFoodDate, localDateTime } from "@/lib/food";
 import { goalNutrients, type GoalNutrient } from "@/lib/food-goals";
 import { foodHistoryWindow, historyDayStatus, historyPeriods, shiftHistoryAnchor, type FoodHistoryData, type HistoryPeriod } from "@/lib/food-history";
 
@@ -115,7 +115,20 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
   return <section className="food-history" aria-label="Food goal history">
     <div className="history-heading"><h2>Food history</h2><div className="history-periods" role="group" aria-label="History period">{historyPeriods.map(value => <button key={value} aria-pressed={period === value} onClick={() => { setAnchor(selected ?? anchor); setPeriod(value); setSelected(null); }}>{value}</button>)}</div></div>
     <div className="history-metrics" role="group" aria-label="History nutrient">{goalNutrients.map(value => <button key={value} aria-pressed={nutrient === value} onClick={() => setNutrient(value)}>{labels[value]}</button>)}</div>
-    <div className="history-period-navigation"><button className="date-arrow" aria-label="Previous period" disabled={range.start === "2000-01-01"} onClick={() => move(-1)}>‹</button><span>{dateLabel(range.start, { day: "numeric", month: "short" })} – {dateLabel(range.end)}</span><button className="date-arrow" aria-label="Next period" disabled={range.start >= foodHistoryWindow(period, today).start} onClick={() => move(1)}>›</button></div>
+    <div className="history-period-navigation">
+      <button className="date-arrow" aria-label="Previous period" disabled={range.start === "2000-01-01"} onClick={() => move(-1)}>‹</button>
+      <label className="history-date-picker">
+        <span aria-hidden="true">{dateLabel(range.start, { day: "numeric", month: "short" })} – {dateLabel(range.end)}</span>
+        <input type="date" aria-label="Choose history date" min="2000-01-01" max={today} value={selected ?? anchor} onClick={event => {
+          try { event.currentTarget.showPicker?.(); } catch { /* Native input remains available when showPicker is unsupported. */ }
+        }} onChange={event => {
+          const value = event.target.value;
+          if (!isFoodDate(value) || value > today) return;
+          setAnchor(value); setSelected(value); onSelectDate(value);
+        }} />
+      </label>
+      <button className="date-arrow" aria-label="Next period" disabled={range.start >= foodHistoryWindow(period, today).start} onClick={() => move(1)}>›</button>
+    </div>
     {error && <div className="form-error" role="alert">{error} <button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div>}
     {!visible && !error && <div className="history-loading" role="status">Loading food history…</div>}
     {visible && <>
