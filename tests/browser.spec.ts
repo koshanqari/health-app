@@ -934,7 +934,7 @@ test("AI credit balance shows approximate replies and contact, updates after rep
   await expect(wallet.locator(".credit-estimate")).toContainText(/About \d+ replies remaining/);
   await expect(wallet.locator(".credit-facts")).toHaveCount(0);
   await expect(wallet).not.toContainText(/multiplier|Current rate|Maximum per reply|temporarily reserved|₹1|\d+(?:\.\d+)?×/);
-  await expect(wallet.getByRole("heading", { name: "Credit history", exact: true })).toBeVisible();
+  await expect(wallet.getByRole("heading", { name: "Credit additions", exact: true })).toBeVisible();
   await wallet.getByRole("button", { name: "Add credits", exact: true }).click();
   await expect(wallet.getByRole("link", { name: /Koshan Qari on LinkedIn/ })).toHaveAttribute("href", "https://in.linkedin.com/in/koshanqari");
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-credit-wallet.png`, fullPage: true });
@@ -942,10 +942,19 @@ test("AI credit balance shows approximate replies and contact, updates after rep
   await page.getByLabel("Your message", { exact: true }).fill("Can you help with my food goals?");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.getByText("I can help you with your food goals.", { exact: true })).toBeVisible();
-  await expect(balance).toContainText((current.available - .30).toFixed(2));
+  const afterReply = await (await page.request.get("/api/credits")).json();
+  expect(afterReply.available).toBeLessThan(current.available);
+  await expect(balance).toContainText(afterReply.available.toFixed(2));
+  await balance.click();
+  await expect(wallet.getByRole("heading", { name: "Credit additions", exact: true })).toBeVisible();
+  await expect(wallet.locator(".credit-history")).not.toContainText("AI reply");
+  const history = await (await page.request.get("/api/credits")).json();
+  expect(history.transactions.every((item: { amount: number; kind: string }) => item.amount > 0 && ["welcome", "topup", "refund"].includes(item.kind))).toBe(true);
+  await wallet.getByRole("button", { name: "Close credits", exact: true }).click();
+
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Hi, I’m Kay.", exact: true })).toBeVisible();
-  await expect(balance).toContainText((current.available - .30).toFixed(2));
+  await expect(balance).toContainText(afterReply.available.toFixed(2));
   await db.execute('UPDATE "creditWallet" SET "balanceCents" = 0 WHERE "userId" = $1', [memberId]);
   await page.reload();
   await expect(balance).toContainText("0.00");

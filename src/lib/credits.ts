@@ -12,9 +12,9 @@ export function publicCreditStatus(data: CreditStatus): PublicCreditStatus {
   return { balance: data.balance, available: data.available, estimatedReplies: data.estimatedReplies, canSend: data.available >= data.maximumReplyCharge };
 }
 export function publicCreditDetails(data: CreditDetails): PublicCreditDetails {
-  return { ...publicCreditStatus(data), transactions: data.transactions.filter(item => item.kind !== "pricing").map(item => ({
+  return { ...publicCreditStatus(data), transactions: data.transactions.filter(item => item.amount > 0 && ["welcome", "topup", "refund"].includes(item.kind)).map(item => ({
     id: item.id, kind: item.kind, amount: item.amount, balanceAfter: item.balanceAfter, createdAt: item.createdAt,
-    reason: item.kind === "welcome" ? "Welcome credits" : item.kind === "topup" ? "Credits added" : item.kind === "refund" ? "Credits returned" : item.amount === 0 ? "AI reply · No charge" : "AI reply",
+    reason: item.kind === "welcome" ? "Welcome credits" : item.kind === "topup" ? "Credits added" : "Credits returned",
   })) };
 }
 export class CreditError extends Error {
@@ -117,7 +117,7 @@ export async function settleCredits(connection: DatabaseConnection, userId: stri
   await connection.execute(`INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason, "usageId", "multiplierHundred", "fxCents", "providerCostMicros")
     VALUES ($1, $2, 'usage', $3, $4, $5, $6, $7, $8, $9)`, [randomUUID(), userId, -charged, wallet.balanceCents - charged, reason, usageId, usage.creditMultiplierHundred, usage.creditFxCents, costMicros]);
 }
-export async function getCreditDetails(userId: string, includeHistory = true): Promise<CreditDetails> {
+export async function getCreditDetails(userId: string, includeHistory: boolean | "additions" = true): Promise<CreditDetails> {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -130,7 +130,7 @@ export async function getCreditDetails(userId: string, includeHistory = true): P
     let transactions: CreditTransaction[] = [];
     if (includeHistory) {
       const [rows] = await connection.execute<DatabaseRow[]>(`SELECT id, kind, "amountCents", "balanceAfterCents", reason, "multiplierHundred", "amountPaidCents",
-        to_char("createdAt", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt", (SELECT a.name FROM "user" a WHERE a.id = "creditLedger"."actorId") AS "actorName" FROM "creditLedger" WHERE "userId" = $1 ORDER BY "createdAt" DESC, id DESC LIMIT 30`, [userId]);
+        to_char("createdAt", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt", (SELECT a.name FROM "user" a WHERE a.id = "creditLedger"."actorId") AS "actorName" FROM "creditLedger" WHERE "userId" = $1 ${includeHistory === "additions" ? 'AND "amountCents" > 0 AND kind IN (\'welcome\',\'topup\',\'refund\')' : ""} ORDER BY "createdAt" DESC, id DESC LIMIT 30`, [userId]);
       transactions = rows.map(row => ({ id: row.id, kind: row.kind, amount: Number(row.amountCents) / 100, balanceAfter: Number(row.balanceAfterCents) / 100, reason: row.reason, createdAt: row.createdAt, multiplier: row.multiplierHundred === null ? null : row.multiplierHundred / 100, amountPaid: row.amountPaidCents === null ? null : Number(row.amountPaidCents) / 100, actorName: row.actorName ?? null }));
     }
     await connection.commit();

@@ -80,7 +80,8 @@ function WalletDialog({ target, onClose, onLoaded, onChanged }: {
           </fieldset>
         </form>}
         {notice && <p className="journal-notice" role="status">{notice}</p>}
-        <h3 className="credit-history-title">Credit history</h3>
+        <h3 className="credit-history-title">{target ? "Credit history" : "Credit additions"}</h3>
+        {!target && data.transactions.length === 0 && <p className="credit-help">No credits added yet.</p>}
         <ul className="credit-history">{data.transactions.map(item => <li key={item.id}><div><strong>{item.reason}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}{target && "actorName" in item && item.actorName ? ` · ${item.actorName}` : ""}{target && "multiplier" in item && item.multiplier !== null ? ` · ${item.multiplier.toFixed(2)}×` : ""}{target && "amountPaid" in item && item.amountPaid !== null ? ` · ₹${amount(item.amountPaid)} received` : ""}</small></div><span>{item.amount > 0 ? "+" : ""}{amount(item.amount)}</span></li>)}</ul>
         {target && <p className="credit-help">Showing the latest 30 transactions. Credits do not expire.</p>}
       </>}

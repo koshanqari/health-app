@@ -210,3 +210,20 @@ test("signup default configuration validates rates and migration preserves exist
     await connection.rollback(); connection.release();
   }
 });
+
+test("members see additions before the history limit while admin keeps usage and pricing audit entries", async () => {
+  await administerCredits(users[1].id, operation({ amount: 10 }));
+  await administerCredits(users[1].id, operation({ action: "refund", amount: 2 }));
+  await administerCredits(users[1].id, operation({ action: "pricing", multiplier: 3.33 }));
+  await db.execute(`INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason, "createdAt")
+    SELECT gen_random_uuid()::text, $1, 'usage', CASE WHEN n % 2 = 0 THEN -10 ELSE 0 END, 3200,
+      'Private AI usage fixture', CURRENT_TIMESTAMP + INTERVAL '1 minute' FROM generate_series(1, 35) n`, [users[0].id]);
+  const member = await (await fetch(base + "/api/credits", { headers: { Cookie: users[0].cookie } })).json();
+  assert.deepEqual(member.transactions.map((item: { kind: string }) => item.kind).sort(), ["refund", "topup", "welcome"]);
+  assert.ok(member.transactions.every((item: { amount: number }) => item.amount > 0));
+  assert.equal(JSON.stringify(member).includes("Private AI usage fixture"), false);
+  const admin = await (await fetch(base + "/api/credits?userId=" + users[0].id, { headers: { Cookie: users[1].cookie } })).json();
+  assert.equal(admin.transactions.length, 30);
+  assert.ok(admin.transactions.some((item: { kind: string; amount: number }) => item.kind === "usage" && item.amount < 0));
+  assert.equal(admin.balance, member.balance);
+});

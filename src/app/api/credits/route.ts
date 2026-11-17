@@ -10,7 +10,8 @@ export async function GET(request: Request) {
   if (!session) return json({ message: "Sign in to view credits." }, 401);
   const userId = new URL(request.url).searchParams.get("userId") || session.user.id;
   if (userId !== session.user.id && session.user.role !== "admin") return json({ message: "Administrator access required." }, 403);
-  try { const data = await getCreditDetails(userId); return json(session.user.role === "admin" && new URL(request.url).searchParams.has("userId") ? data : publicCreditDetails(data)); } catch (error) { return failure(error); }
+  const adminView = session.user.role === "admin" && new URL(request.url).searchParams.has("userId");
+  try { const data = await getCreditDetails(userId, adminView ? true : "additions"); return json(adminView ? data : publicCreditDetails(data)); } catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
   const session = await getSession();
