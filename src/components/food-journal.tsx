@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppIcon } from "./app-header";
+import { FoodGoalPanel } from "./food-goals";
 import { meals, localDateTime, nextFoodDate, macroCalorieEstimate, type FoodEstimate, type FoodEntry, type FoodInput, type FoodJournalData } from "@/lib/food";
 
 const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -207,7 +208,13 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
   const periodLabel = date ? new Intl.DateTimeFormat("en", period === "month" ? { month: "long", year: "numeric" } : { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00")) : "";
 
   return <div className="food-journal">
-    <div className="food-page-heading"><div><p className="eyebrow">A place for every bite</p><h1>Your food journal</h1><p className="page-subtitle">Every meal, snack, and small beginning.</p></div><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
+    <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
+    {data && <FoodGoalPanel key={date} goals={data.goals ?? null} day={data.day} date={date} onSaved={goals => {
+      for (const cached of journalCache.current.values()) cached.value = { ...cached.value, goals };
+      setData(current => current ? { ...current, goals } : current);
+      setNotice("Daily goals saved.");
+    }} />}
+    {!data && loading && <div className="goal-loading" role="status">Loading your daily goals…</div>}
     <div className="journal-controls">
       <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}>‹</button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}>›</button></div>
       <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>

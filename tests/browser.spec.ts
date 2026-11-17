@@ -248,6 +248,52 @@ test("food journal saves, edits, summarizes, and deletes food with Healthy as th
   await expect(quickEntry).toHaveCount(0);
 });
 
+test("daily goals suggest editable macros, persist, and update remaining amounts after logging", async ({ page }, info) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
+  await page.getByLabel("Journal date", { exact: true }).fill("2034-08-12");
+  const panel = page.getByRole("region", { name: "Daily food goals" });
+  await panel.getByRole("button", { name: "Set goals", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Daily food goals" });
+  await expect(dialog.getByLabel("Minimum protein (g)", { exact: true })).toHaveValue("137.5");
+  await dialog.getByLabel("Minimum calories (kcal)", { exact: true }).fill("2000");
+  await expect(dialog.getByLabel("Minimum protein (g)", { exact: true })).toHaveValue("125");
+  await dialog.getByLabel("Minimum protein (g)", { exact: true }).fill("140");
+  await dialog.getByLabel("Minimum calories (kcal)", { exact: true }).fill("2200");
+  await expect(dialog.getByLabel("Minimum protein (g)", { exact: true })).toHaveValue("140");
+  await expect(dialog.getByLabel("Minimum carbs (g)", { exact: true })).toHaveValue("275");
+  await dialog.getByLabel("Maximum calories (kcal)", { exact: true }).fill("2100");
+  await expect(dialog.getByRole("button", { name: "Save goals", exact: true })).toBeDisabled();
+  await dialog.getByLabel("Maximum calories (kcal)", { exact: true }).fill("2500");
+  await dialog.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuenow", "0");
+  await page.reload();
+  await panel.getByRole("button", { name: "Edit goals", exact: true }).click();
+  await expect(dialog.getByLabel("Minimum protein (g)", { exact: true })).toHaveValue("140");
+  await dialog.getByLabel("Minimum calories (kcal)", { exact: true }).fill("2000");
+  await expect(dialog.getByLabel("Minimum protein (g)", { exact: true })).toHaveValue("140");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Log food", exact: true }).click();
+  const foodDialog = page.getByRole("dialog", { name: "Log food", exact: true });
+  for (const [label, value] of [["Calories (kcal)", "400"], ["Protein (g)", "20"], ["Carbs (g)", "50"], ["Fat (g)", "10"]]) await foodDialog.getByLabel(label, { exact: true }).fill(value);
+  await foodDialog.getByLabel("Food name", { exact: true }).fill("Goals test lunch");
+  await foodDialog.getByRole("button", { name: "Save food", exact: true }).click();
+  await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuenow", "400");
+  await expect(panel.locator(".goal-calories .goal-remaining strong")).toHaveText("1,800");
+  await expect(panel.locator(".goal-protein .goal-remaining strong")).toHaveText("120");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const goalBox = await panel.boundingBox(), navigationBox = await page.getByRole("navigation", { name: "Main navigation" }).boundingBox();
+  if (info.project.name === "mobile") expect(goalBox!.y + goalBox!.height).toBeLessThanOrEqual(navigationBox!.y);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-food-goals.png`, fullPage: true });
+  await page.getByRole("article", { name: "Goals test lunch", exact: true }).getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Delete entry", exact: true }).click();
+  await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuenow", "0");
+});
+
 test("tabs switch without network, preserve journal state, and support browser history", async ({ page, context }, info) => {
   await page.goto("/login");
   await page.getByLabel("Email address", { exact: true }).fill(memberEmail);

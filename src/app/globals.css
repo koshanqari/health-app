@@ -354,9 +354,55 @@ h1, h2, h3 { line-height: 1.2; }
 .food-log-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .photo-estimate-note { color: var(--accent-text); font-size: 12px; margin: 0 0 14px; }
 .macro-warning { font-size: 11px; line-height: 1.6; color: #775429; margin: 10px 0 0; }
+.food-goals { margin-top: 24px; padding: 24px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 26px; }
+.goal-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.goal-panel-heading h2 { font-size: 18px; font-weight: 800; }
+.goal-panel-heading .text-button { flex-shrink: 0; font-size: 13px; }
+.goal-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.goal-calories { grid-column: 1 / -1; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.goal-nutrient { min-width: 0; }
+.goal-nutrient h3 { font-size: 13px; font-weight: 650; color: var(--muted); }
+.goal-remaining { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 14px; }
+.goal-remaining strong { color: var(--accent-text); font-size: 25px; font-weight: 850; line-height: 1.2; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.goal-remaining > span { color: var(--muted); font-size: 12px; }
+.goal-calories .goal-remaining { flex-direction: row; align-items: baseline; gap: 12px; }
+.goal-calories .goal-remaining strong { font-size: 44px; }
+.goal-calories .goal-remaining > span { font-size: 14px; }
+.goal-meter { position: relative; height: 7px; border-radius: 8px; background: #e6eee4; overflow: hidden; }
+.goal-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--primary-pressed); transition: width 350ms ease-out; }
+.goal-meter-min { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-text); }
+.goal-range { margin-top: 9px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.goal-range > span { padding: 0 3px; }
+.goal-room { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.goal-unset > p:first-child { font-size: 20px; font-weight: 750; margin-bottom: 6px; }
+.goal-unset > p:last-child, .goal-loading { color: var(--muted); font-size: 13px; }
+.goal-loading { margin-top: 24px; min-height: 150px; padding: 26px; border: 1px solid var(--line); border-radius: 26px; }
+.goal-form-intro { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+.goal-input-head, .goal-input-row { display: grid; grid-template-columns: minmax(70px, 1fr) repeat(2, minmax(0, 1fr)); gap: 12px; align-items: center; }
+.goal-input-head { font-size: 11px; color: var(--muted); text-align: right; padding: 0 16px; margin-bottom: 8px; }
+.goal-input-row { min-height: 56px; border-bottom: 1px solid #dce1d5; }
+.goal-input-row:last-child { border: 0; }
+.goal-input-row > span { font-size: 14px; }
+.goal-input-row small { display: block; color: var(--muted); font-size: 10px; }
+.goal-input-row input { width: 100%; min-width: 0; border: 0; padding: 8px 0; background: transparent; color: var(--ink); text-align: right; font-size: 16px; appearance: textfield; -moz-appearance: textfield; }
+.goal-input-row input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.goal-form-hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 14px 0 4px; }
+.goal-reset { padding-left: 0; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .goal-meter-fill { transition: none; } }
+@media (max-width: 700px) {
+  .food-goals { padding: 20px; margin-top: 22px; border-radius: 24px; }
+  .goal-progress-grid { gap: 22px 14px; }
+  .goal-calories .goal-remaining strong { font-size: 38px; }
+  .goal-nutrient:not(.goal-calories) .goal-remaining strong { font-size: 21px; }
+  .goal-nutrient:not(.goal-calories) .goal-remaining > span { font-size: 10px; }
+  .goal-nutrient:not(.goal-calories) .goal-range { font-size: 10px; }
+  .goal-nutrient:not(.goal-calories) .goal-range > span { display: none; }
+}
 .entry-meta { flex-wrap: wrap; }
 @media (max-width: 700px) {
   .food-log-actions { width: 100%; }
+  .food-page-heading { align-items: center; flex-wrap: nowrap; }
+  .food-page-heading .food-log-actions { width: auto; }
 }
 
 .home-chat-link { margin-top: 20px; gap: 14px; }

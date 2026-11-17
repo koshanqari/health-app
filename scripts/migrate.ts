@@ -10,6 +10,13 @@ try {
     await connection.beginTransaction();
     await connection.execute("SELECT pg_advisory_xact_lock(1835462101)");
     await connection.execute(`
+      CREATE TABLE IF NOT EXISTS "foodGoal" (
+        "userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+        targets JSONB NOT NULL CHECK (jsonb_typeof(targets) = 'object'),
+        "updatedAt" TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+      )
+    `);
+    await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodAiBudget" (
         scope VARCHAR(64) NOT NULL, month CHAR(7) NOT NULL,
         "usedMicros" BIGINT NOT NULL DEFAULT 0 CHECK ("usedMicros" >= 0),
@@ -76,7 +83,7 @@ try {
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
-  console.log("Postgres authentication, food journal, AI budget, and chat schemas are ready.");
+  console.log("Postgres authentication, food journal, daily goals, AI budget, and chat schemas are ready.");
 } catch (error) {
   console.error("Could not migrate Postgres. Check DATABASE_URL and database connectivity.");
   if (error && typeof error === "object" && "code" in error) console.error("Database error code:", String(error.code));
