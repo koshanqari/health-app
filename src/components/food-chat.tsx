@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { memo, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import type { UpdateGuard } from "./app-updates";
 import { CreditWallet } from "./credit-wallet";
 import { GoalForm } from "./food-goals";
 import { goalNutrients } from "@/lib/food-goals";
@@ -38,12 +39,14 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   const thread = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const scrollToEnd = useRef(true);
+  const refreshedAt = useRef(0);
 
   function apply(next: FoodChatState) {
+    refreshedAt.current = Date.now();
     setState(previous => previous && next.version < previous.version ? previous : next);
   }
-  async function refresh() {
-    const response = await fetch("/api/food/chat", { cache: "no-store" });
+  async function refresh(signal?: AbortSignal) {
+    const response = await fetch("/api/food/chat", { cache: "no-store", signal });
     const next = await response.json();
     if (!response.ok) throw new Error(next.message || "We couldn’t load the conversation.");
     apply(next); return next as FoodChatState;
@@ -87,6 +90,39 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
     }, 2000);
     return () => clearInterval(timer);
   }, [state?.pending, busy]);
+
+  useEffect(() => {
+    const guard = (event: Event) => {
+      const detail = (event as CustomEvent<UpdateGuard>).detail;
+      detail.busy ||= busy || loading || preparing || !!state?.pending;
+      detail.dirty ||= !!text.trim() || photos.length > 0 || !!state?.draft || !!state?.goalDraft || !!review || !!goalReview;
+    };
+    window.addEventListener("daywell-update-guard", guard);
+    return () => window.removeEventListener("daywell-update-guard", guard);
+  }, [busy, loading, preparing, state?.pending, state?.draft, state?.goalDraft, text, photos.length, review, goalReview]);
+
+  useEffect(() => {
+    if (!active || !state || busy || loading || preparing || state.pending) return;
+    const controller = new AbortController();
+    let inFlight = false;
+    async function check(force = false) {
+      const age = Date.now() - refreshedAt.current;
+      if (controller.signal.aborted || inFlight || document.visibilityState !== "visible" || !navigator.onLine || age < (force ? 2000 : 30_000)) return;
+      inFlight = true;
+      try { await refresh(controller.signal); } catch { /* Keep the composer/photos; retry on the next resume. */ }
+      finally { inFlight = false; }
+    }
+    const resume = () => { void check(true); };
+    void check();
+    const timer = setInterval(() => { void check(); }, 30_000);
+    window.addEventListener("focus", resume); window.addEventListener("pageshow", resume); window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      controller.abort(); clearInterval(timer);
+      window.removeEventListener("focus", resume); window.removeEventListener("pageshow", resume); window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
+    };
+  }, [active, !!state, busy, loading, preparing, state?.pending]);
 
   async function choose(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = "";

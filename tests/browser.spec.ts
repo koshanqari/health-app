@@ -1008,3 +1008,88 @@ test("shared AI limits explain the pause without claiming that user credits are 
   await expect(page.getByText("Kay’s shared spending limit is reached. Your credits are unchanged.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "View AI credits", exact: true })).toContainText("20.00");
 });
+
+test("resuming Kay refreshes a stale allowance without clearing unsent text or photos", async ({ page }) => {
+  await page.clock.install();
+  let blocked = true, resets = 0, reads = 0;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() === "POST") return route.fallback();
+    if (route.request().method() === "DELETE") resets++; else reads++;
+    const response = await route.fetch(), body = await response.json();
+    if (response.ok()) body.quota = { ...body.quota, configured: true, remainingToday: blocked ? 0 : 40, remainingBudgetUsd: .99, credits: { balance: 20, available: 20, estimatedReplies: 61, canSend: true } };
+    await route.fulfill({ response, json: body });
+  });
+  await chatLogin(page);
+  const note = page.getByLabel("Your message", { exact: true });
+  await note.fill("Keep my unsent meal note");
+  const photo = await sharp({ create: { width: 40, height: 40, channels: 3, background: "#aabb88" } }).png().toBuffer();
+  await page.getByLabel("Upload food photo", { exact: true }).setInputFiles({ name: "meal.png", mimeType: "image/png", buffer: photo });
+  await expect(page.locator(".chat-photo-thumb img")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  blocked = false;
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+  await expect(note).toHaveValue("Keep my unsent meal note");
+  await expect(page.locator(".chat-photo-thumb img")).toHaveCount(1);
+  expect(reads).toBeGreaterThan(0); expect(resets).toBe(1);
+});
+
+test("a new release offers a session-preserving update and protects in-flight replies and unsent photos", async ({ page }, info) => {
+  await page.clock.install();
+  const response = await page.request.get("/api/version");
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  const currentRelease = (await response.json()).release;
+  let remoteRelease = currentRelease;
+  await page.route("**/api/version*", async route => {
+    expect(route.request().headers()["x-daywell-release"]).toBe(currentRelease);
+    await route.fulfill({ json: { release: remoteRelease }, headers: { "Cache-Control": "no-store" } });
+  });
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; }), ready = new Promise<void>(resolve => { started = resolve; });
+  await page.route("**/api/food/chat", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async () => {
+      started(); await held;
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "reply", reply: "Ready to keep logging.", draft: null, goalDraft: null }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+    } });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  const originalUser = (await (await page.request.get("/api/account")).json()).user.id;
+  await page.getByLabel("Your message", { exact: true }).fill("Help with my meal");
+  await page.getByRole("button", { name: "Send message", exact: true }).click(); await ready;
+  try {
+    remoteRelease = currentRelease + "-next";
+    await page.clock.fastForward(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByText("A new version is ready.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Update app", exact: true }).click();
+    await expect(page.getByText("Please wait for your current action to finish.", { exact: true })).toBeVisible();
+  } finally { release(); }
+  await expect(page.getByText("Ready to keep logging.", { exact: true })).toBeVisible();
+  const note = page.getByLabel("Your message", { exact: true });
+  await note.fill("Do not lose this note");
+  const photo = await sharp({ create: { width: 40, height: 40, channels: 3, background: "#aabb88" } }).png().toBuffer();
+  await page.getByLabel("Upload food photo", { exact: true }).setInputFiles({ name: "meal.png", mimeType: "image/png", buffer: photo });
+  await expect(page.locator(".chat-photo-thumb img")).toHaveCount(1);
+  page.once("dialog", async dialog => { expect(dialog.message()).toContain("selected photos"); await dialog.dismiss(); });
+  await page.getByRole("button", { name: "Update app", exact: true }).click();
+  await expect(note).toHaveValue("Do not lose this note");
+  await expect(page.locator(".chat-photo-thumb img")).toHaveCount(1);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-app-update.png`, fullPage: true });
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  await expect(page.getByText("A new version is ready.", { exact: true })).toHaveCount(0);
+  await expect(note).toHaveValue("Do not lose this note");
+  remoteRelease = currentRelease + "-another";
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByText("A new version is ready.", { exact: true })).toBeVisible();
+  remoteRelease = currentRelease;
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Update app", exact: true }).click();
+  await expect(page).toHaveURL(/\/app\?tab=chat$/);
+  await expect(page.getByLabel("Your message", { exact: true })).toBeEnabled();
+  expect((await (await page.request.get("/api/account")).json()).user.id).toBe(originalUser);
+});
