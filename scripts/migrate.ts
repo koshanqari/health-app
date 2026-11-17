@@ -111,7 +111,7 @@ try {
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
   const bootstrap = await bootstrapAdmin(process.env);
-  if (bootstrap === "created") console.log("First administrator created. Sign in at /admin.");
+  if (bootstrap === "promoted") console.log("Existing account granted administrator access. Sign in at /admin with its usual password.");
   console.log("Postgres authentication, profiles, food journal, daily goals, AI budget, and chat schemas are ready.");
 } catch (error) {
   console.error("Could not migrate Postgres. Check DATABASE_URL and database connectivity.");

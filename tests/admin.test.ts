@@ -1,12 +1,19 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { verifyPassword } from "better-auth/crypto";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { db, type DatabaseRow } from "../src/lib/db";
 import { AdminError, bootstrapAdmin, changeUserRole, createAdmin } from "../src/lib/admin";
 
 const schema = "admin_test_" + randomUUID().replaceAll("-", "");
-const env = { BOOT_ADMIN_USER: "bootstrap@example.com", BOOT_ADMIN_PASS: "Bootstrap-" + randomUUID() };
+const env = { BOOT_ADMIN_USER: "bootstrap@example.com" };
+const memberPassword = "Member-" + randomUUID();
+async function seedMember(email = env.BOOT_ADMIN_USER) {
+  const id = randomUUID(), password = await hashPassword(memberPassword);
+  await db.execute(`INSERT INTO "${schema}"."user" (id, name, email, role, "emailVerified", "createdAt", "updatedAt") VALUES ($1, 'Member', $2, 'user', FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, [id, email]);
+  await db.execute(`INSERT INTO "${schema}"."account" (id, "userId", "accountId", "providerId", password, "createdAt", "updatedAt") VALUES ($1, $2, $2, 'credential', $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, [randomUUID(), id, password]);
+  return { id, password };
+}
 const store = { getConnection: async () => {
   const connection = await db.getConnection();
   return { ...connection, beginTransaction: async () => {
@@ -24,31 +31,37 @@ before(async () => {
 beforeEach(async () => { await db.execute(`TRUNCATE "${schema}"."session", "${schema}"."account", "${schema}"."user"`); });
 after(async () => { await db.execute(`DROP SCHEMA "${schema}" CASCADE`); await db.end(); });
 
-test("bootstrap is optional, concurrent-safe, hashes credentials and never changes an existing administrator", async () => {
+test("bootstrap promotes the existing account once, preserving its identity and password under concurrent retries", async () => {
   assert.equal(await bootstrapAdmin({}, store), "unconfigured");
   assert.equal((await rows("user")).length, 0);
+  const original = await seedMember();
   const results = await Promise.all([bootstrapAdmin(env, store), bootstrapAdmin(env, store)]);
-  assert.deepEqual(results.sort(), ["created", "exists"]);
+  assert.deepEqual(results.sort(), ["exists", "promoted"]);
   const user = (await rows("user"))[0], account = (await rows("account"))[0];
-  assert.equal(user.role, "admin"); assert.equal(user.email, env.BOOT_ADMIN_USER);
-  assert.equal(account.providerId, "credential"); assert.equal(account.accountId, user.id);
-  assert.ok(account.password !== env.BOOT_ADMIN_PASS);
-  assert.equal(await verifyPassword({ hash: account.password, password: env.BOOT_ADMIN_PASS }), true);
-  assert.equal(await bootstrapAdmin({ BOOT_ADMIN_USER: "another@example.com", BOOT_ADMIN_PASS: "changed" }, store), "exists");
+  assert.equal(user.id, original.id); assert.equal(user.role, "admin"); assert.equal(user.name, "Member");
+  assert.equal(user.email, env.BOOT_ADMIN_USER);
+  assert.ok(account.password === original.password);
+  assert.equal(await verifyPassword({ hash: account.password, password: memberPassword }), true);
+  assert.equal(await bootstrapAdmin({ BOOT_ADMIN_USER: "BOOTSTRAP@example.com", BOOT_ADMIN_PASS: "ignored-obsolete-value" }, store), "exists");
   assert.equal((await rows("user")).length, 1);
-  assert.ok((await rows("account"))[0].password === account.password);
+  assert.ok((await rows("account"))[0].password === original.password);
 });
 
-test("bootstrap refuses partial configuration and never takes over a preexisting member email", async () => {
-  await assert.rejects(bootstrapAdmin({ BOOT_ADMIN_USER: env.BOOT_ADMIN_USER }, store), fail(400));
+test("bootstrap refuses missing or invalid accounts and changes only the configured existing member", async () => {
+  await assert.rejects(bootstrapAdmin({ BOOT_ADMIN_USER: "invalid" }, store), fail(400));
+  await assert.rejects(bootstrapAdmin(env, store), fail(404));
   assert.equal((await rows("user")).length, 0);
-  await db.execute(`INSERT INTO "${schema}"."user" (id, name, email, role, "emailVerified", "createdAt", "updatedAt") VALUES ($1, 'Member', $2, 'user', FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, [randomUUID(), env.BOOT_ADMIN_USER]);
-  await assert.rejects(bootstrapAdmin(env, store), fail(409));
-  assert.equal((await rows("user"))[0].role, "user");
-  assert.equal((await rows("account")).length, 0);
+  const other = await seedMember("other@example.com");
+  await db.execute(`UPDATE "${schema}"."user" SET role = 'admin' WHERE id = $1`, [other.id]);
+  await seedMember();
+  assert.equal(await bootstrapAdmin(env, store), "promoted");
+  assert.equal((await rows("user")).length, 2);
+  assert.equal((await rows("user")).filter(user => user.role === "admin").length, 2);
+  assert.ok((await rows("account")).find(account => account.userId === other.id)!.password === other.password);
 });
 
 test("only current admins create accounts, conflicts preserve credentials, and the last administrator is protected", async () => {
+  await seedMember();
   await bootstrapAdmin(env, store);
   const first = (await rows("user"))[0];
   const next = { name: "Second Admin", email: "second@example.com", password: "Second-" + randomUUID() };

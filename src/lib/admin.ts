@@ -45,13 +45,16 @@ async function insertAdmin(connection: DatabaseConnection, input: ReturnType<typ
   return { id, name: input.name, email: input.email, role: "admin" };
 }
 export async function bootstrapAdmin(env: Record<string, string | undefined>, store: Store = db) {
+  if (!env.BOOT_ADMIN_USER?.trim()) return "unconfigured" as const;
+  const email = env.BOOT_ADMIN_USER.trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AdminError(400, "BOOT_ADMIN_USER must be an existing account’s email address.");
   return locked(store, async connection => {
-    const [admins] = await connection.execute<DatabaseRow[]>('SELECT id FROM "user" WHERE role = \'admin\' LIMIT 1');
-    if (admins.length) return "exists" as const;
-    if (!env.BOOT_ADMIN_USER && !env.BOOT_ADMIN_PASS) return "unconfigured" as const;
-    const input = credentials({ name: "Administrator", email: env.BOOT_ADMIN_USER, password: env.BOOT_ADMIN_PASS });
-    await insertAdmin(connection, input);
-    return "created" as const;
+    const [users] = await connection.execute<DatabaseRow[]>('SELECT id, role FROM "user" WHERE lower(email) = $1 FOR UPDATE', [email]);
+    if (!users.length) throw new AdminError(404, "The bootstrap account does not exist. Sign up normally with the BOOT_ADMIN_USER email first.");
+    if (users[0].role === "admin") return "exists" as const;
+    await connection.execute(`UPDATE "user" SET role = 'admin', "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = $1`, [users[0].id]);
+    await connection.execute('DELETE FROM "session" WHERE "userId" = $1', [users[0].id]);
+    return "promoted" as const;
   });
 }
 export async function createAdmin(actorId: string, value: unknown, store: Store = db) {
