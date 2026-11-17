@@ -32,6 +32,6 @@ export function AuthShell({ mode, children }: { mode: AuthMode; children: React.
         {children}
       </section>
     </main>
-    <footer className="auth-footer"><span>A little kinder to yourself, every day.</span><Link href={isAdmin ? "/login" : "/admin/login"}>{isAdmin ? "Back to member sign in" : "Admin sign in"}</Link></footer>
+    <footer className="auth-footer"><span>A little kinder to yourself, every day.</span>{isAdmin && <Link href="/login">Back to member sign in</Link>}</footer>
   </div>;
 }

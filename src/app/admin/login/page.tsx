@@ -1,8 +1,3 @@
-import { AuthForm } from "@/components/auth-form";
-import { AuthShell } from "@/components/auth-shell";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Administrator sign in" };
-
-export default function AdminLoginPage() {
-  return <AuthShell mode="admin"><AuthForm mode="admin" /></AuthShell>;
-}
+export default function LegacyAdminLogin() { redirect("/admin"); }

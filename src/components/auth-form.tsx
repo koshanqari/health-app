@@ -45,7 +45,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "admin" }) {
         setError("This account doesn’t have administrator access. Please use member sign in.");
         return;
       }
-      router.replace(account.user.role === "admin" ? "/admin" : "/app");
+      router.replace(mode === "admin" ? "/admin" : "/app");
       router.refresh();
     } catch {
       setError("Something interrupted the connection. Please try again.");

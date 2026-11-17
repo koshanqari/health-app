@@ -1,5 +1,6 @@
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/lib/auth";
+import { bootstrapAdmin } from "../src/lib/admin";
 import { db } from "../src/lib/db";
 
 try {
@@ -109,6 +110,8 @@ try {
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
+  const bootstrap = await bootstrapAdmin(process.env);
+  if (bootstrap === "created") console.log("First administrator created. Sign in at /admin.");
   console.log("Postgres authentication, profiles, food journal, daily goals, AI budget, and chat schemas are ready.");
 } catch (error) {
   console.error("Could not migrate Postgres. Check DATABASE_URL and database connectivity.");

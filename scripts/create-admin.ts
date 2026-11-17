@@ -57,7 +57,7 @@ try {
   } finally {
     connection.release();
   }
-  console.log("Administrator created. Sign in at /admin/login.");
+  console.log("Administrator created. Sign in at /admin.");
 } catch (error) {
   const message = error instanceof Error ? error.message : "Unable to create administrator.";
   console.error(message);

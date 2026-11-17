@@ -78,7 +78,7 @@ test.afterAll(async () => {
 test("login, signup, and admin login render without overflow or browser errors", async ({ page }, info) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  for (const path of ["/login", "/signup", "/admin/login"]) {
+  for (const path of ["/login", "/signup", "/admin"]) {
     await page.goto(path);
     await expect(page.getByLabel("Email address", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -136,7 +136,7 @@ test("signup validates confirmation, creates a user, persists login, and signs o
 });
 
 test("member login works and an ordinary member cannot use admin login", async ({ page }) => {
-  await page.goto("/admin/login");
+  await page.goto("/admin");
   await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -151,7 +151,7 @@ test("member login works and an ordinary member cannot use admin login", async (
 });
 
 test("administrator sees real accounts and can search and filter the directory", async ({ page }, info) => {
-  await page.goto("/admin/login");
+  await page.goto("/admin");
   await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -163,9 +163,9 @@ test("administrator sees real accounts and can search and filter the directory",
   await expect(page.getByText("No accounts match this search.")).toBeVisible();
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin.png`, fullPage: true });
-  await page.getByRole("link", { name: "Open profile", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
   await page.getByRole("dialog", { name: "Profile", exact: true }).getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/admin$/);
 });
 
 test("food journal saves, edits, summarizes, and deletes food with Healthy as the default", async ({ page }, info) => {
@@ -754,15 +754,15 @@ test("profile edits persist and return to the same tab without losing journal or
 });
 
 test("administrator avatar opens the private profile and returns to administration", async ({ page }) => {
-  await page.goto("/admin/login");
+  await page.goto("/admin");
   await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByRole("link", { name: "Open profile", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
   const profile = page.getByRole("dialog", { name: "Profile", exact: true });
   await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Browser Administrator");
   await expect(profile.getByLabel("Email", { exact: true })).toHaveValue(adminEmail);
-  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await profile.getByRole("button", { name: "Back to admin", exact: true }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Hello, Browser.", exact: true })).toBeVisible();
 });
@@ -878,4 +878,39 @@ test("AI goal help prefills chat, proposes editable goals and saves only after f
   await expect(dialog.getByLabel("Maximum protein (g)", { exact: true })).toHaveValue("400");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("admin entry stays at /admin, member screens have no admin links, and administrators manage roles", async ({ page }, info) => {
+  const email = `managed-browser-${randomUUID()}@example.com`;
+  try {
+    await page.goto("/login");
+    await expect(page.getByRole("link", { name: "Admin sign in", exact: true })).toHaveCount(0);
+    await page.goto("/admin");
+    await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Your community", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.getByRole("button", { name: "Create administrator", exact: true }).click();
+    const create = page.getByRole("dialog", { name: "Create administrator", exact: true });
+    await create.getByLabel("Name", { exact: true }).fill("New Administrator");
+    await create.getByLabel("Email address", { exact: true }).fill(email);
+    await create.getByLabel("Initial password", { exact: true }).fill(password);
+    await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-create-admin.png`, fullPage: true });
+    await create.getByRole("button", { name: "Create admin", exact: true }).click();
+    await expect(create).toHaveCount(0);
+    await page.getByLabel("Search accounts", { exact: true }).fill(email);
+    await expect(page.getByRole("cell", { name: "Administrator", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `Make member: ${email}`, exact: true }).click();
+    await page.getByRole("dialog", { name: "Make member", exact: true }).getByRole("button", { name: "Confirm change" }).click();
+    await expect(page.getByRole("cell", { name: "Member", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `Make administrator: ${email}`, exact: true }).click();
+    await page.getByRole("dialog", { name: "Make administrator", exact: true }).getByRole("button", { name: "Confirm change" }).click();
+    await expect(page.getByRole("cell", { name: "Administrator", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-management.png`, fullPage: true });
+    await page.getByRole("link", { name: "Your space", exact: true }).click();
+    await expect(page.getByRole("link", { name: "Community", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open administration", exact: true })).toHaveCount(0);
+  } finally { await db.execute('DELETE FROM "user" WHERE email = $1', [email]); }
 });

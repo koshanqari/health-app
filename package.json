@@ -21,7 +21,8 @@
     "test:browser": "node --env-file=.env.local ./node_modules/@playwright/test/cli.js test",
     "preview:build": "npm run preview:build:cloud",
     "preview": "npm run preview:cloud",
-    "db:import-mysql": "node --env-file=.env.local --import tsx scripts/import-mysql.ts"
+    "db:import-mysql": "node --env-file=.env.local --import tsx scripts/import-mysql.ts",
+    "admin:bootstrap": "infisical secrets-manager run --env=dev --path=/ -- node --import tsx scripts/bootstrap-admin.ts"
   },
   "dependencies": {
     "@fontsource-variable/nunito-sans": "5.3.0",

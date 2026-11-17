@@ -28,11 +28,11 @@ export function AppShell({ name, avatarId = null, isAdmin = false, area = "membe
 }) {
   return <div className={area === "member" ? activeTab === "chat" ? "workspace has-bottom-nav ai-workspace" : "workspace has-bottom-nav" : "workspace"}>
     <header className="app-header">
-      <div className="app-brand"><Brand href={area === "member" ? "/app" : "/admin"} />{isAdmin && <nav aria-label="Account areas">
-        <Link href="/app" prefetch={false} className={area === "member" ? "nav-item active" : "nav-item"} aria-current={area === "member" ? "page" : undefined}>Your space</Link>
-        <Link href="/admin" className={area === "admin" ? "nav-item active" : "nav-item"} aria-current={area === "admin" ? "page" : undefined}>Community</Link>
+      <div className="app-brand"><Brand href={area === "member" ? "/app" : "/admin"} />{isAdmin && area === "admin" && <nav aria-label="Account areas">
+        <Link href="/app" prefetch={false} className="nav-item">Your space</Link>
+        <Link href="/admin" className="nav-item active" aria-current="page">Community</Link>
       </nav>}</div>
-      <div className="account-actions">{onOpenProfile ? <button type="button" className="avatar" aria-label="Open profile" title={`Profile · ${name}`} onClick={onOpenProfile}><ProfileAvatar avatarId={avatarId} name={name} /></button> : <Link className="avatar" aria-label="Open profile" href={area === "admin" ? "/app?profile=1&returnTo=admin" : "/app?profile=1"} prefetch={false}><ProfileAvatar avatarId={avatarId} name={name} /></Link>}</div>
+      <div className="account-actions">{onOpenProfile ? <button type="button" className="avatar" aria-label="Open profile" title={`Profile · ${name}`} onClick={onOpenProfile}><ProfileAvatar avatarId={avatarId} name={name} /></button> : <Link className="avatar" aria-label="Open profile" href={area === "admin" ? "/admin" : "/app?profile=1"} prefetch={false}><ProfileAvatar avatarId={avatarId} name={name} /></Link>}</div>
     </header>
     {children}
     {!(area === "member" && activeTab === "chat") && <footer className="workspace-footer">Small steps. Your own pace.</footer>}

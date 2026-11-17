@@ -53,7 +53,10 @@ after(async () => {
 test("anonymous visitors cannot read accounts, users, or protected pages", async () => {
   assert.equal((await fetch(`${base}/api/account`)).status, 401);
   assert.equal((await fetch(`${base}/api/admin/users`)).status, 401);
-  for (const [path, destination] of [["/app", "/login"], ["/admin", "/admin/login"]]) {
+  const adminPage = await fetch(base + "/admin", { redirect: "manual" });
+  assert.equal(adminPage.status, 200);
+  assert.ok((await adminPage.text()).includes("Administrator sign in"));
+  for (const [path, destination] of [["/app", "/login"]]) {
     const response = await fetch(base + path, { redirect: "manual" });
     assert.equal(response.status, 307);
     assert.ok(response.headers.get("location")?.endsWith(destination));
@@ -119,6 +122,29 @@ test("separately provisioned admin can sign in and list accounts without exposin
     assert.equal("password" in user, false);
     assert.equal("token" in user, false);
   }
+});
+
+test("admin mutations reject members and untrusted requests, create hashed accounts and revoke sessions on role changes", async () => {
+  const email = `managed-${run}@example.com`;
+  const mutate = (body: unknown, method = "POST", cookie = adminCookie, origin = base) => fetch(base + "/api/admin/users", { method, headers: { Cookie: cookie, Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await mutate({}, "POST", "")).status, 401);
+    assert.equal((await mutate({}, "POST", memberCookie)).status, 403);
+    assert.equal((await mutate({}, "POST", adminCookie, "https://outside.example")).status, 403);
+    assert.equal((await mutate({ name: "Bad", email, password: "short" })).status, 400);
+    const created = await mutate({ name: "Managed Admin", email, password });
+    assert.equal(created.status, 201);
+    const body = await created.json();
+    assert.equal(body.user.role, "admin"); assert.equal("password" in body.user, false);
+    const login = await post("sign-in/email", { email, password }, "", `${ipPrefix}7`);
+    assert.equal(login.status, 200);
+    const managedCookie = cookies(login);
+    assert.equal((await fetch(base + "/api/admin/users", { headers: { Cookie: managedCookie } })).status, 200);
+    assert.equal((await mutate({ id: body.user.id, role: "user" }, "PATCH")).status, 200);
+    assert.equal((await fetch(base + "/api/admin/users", { headers: { Cookie: managedCookie } })).status, 401);
+    assert.equal((await mutate({ id: body.user.id, role: "admin", password: "forged" }, "PATCH")).status, 400);
+    assert.equal((await mutate({ id: body.user.id, role: "admin" }, "PATCH")).status, 200);
+  } finally { await db.execute('DELETE FROM "user" WHERE email = $1', [email]); }
 });
 
 test("login rate limits are enforced and recorded in Postgres", async () => {

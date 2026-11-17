@@ -15,7 +15,7 @@ export async function requireUser(loginPath = "/login") {
 }
 
 export async function requireAdmin() {
-  const user = await requireUser("/admin/login");
+  const user = await requireUser("/admin");
   if (user.role !== "admin") redirect("/app?notice=admin-only");
   return user;
 }

@@ -54,7 +54,6 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         <section className="account-ready">
           <div className="ready-check" aria-hidden="true">✓</div><div><h2>Your account is ready.</h2><p>Signed in as <strong>{user.email}</strong>.</p></div>
         </section>
-        {user.role === "admin" && <div className="account-note"><Link href="/admin">Open administration</Link></div>}
     </>}
     activity={<UpcomingFeature id="activity" />}
     progress={<UpcomingFeature id="progress" />}

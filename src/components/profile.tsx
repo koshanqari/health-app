@@ -6,7 +6,7 @@ import { profileAvatars, type ProfileAvatarId, type UserProfile } from "@/lib/pr
 import { ProfileAvatar } from "./profile-avatar";
 import { SignOut } from "./sign-out";
 
-export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (user: UserProfile) => void }) {
+export function Profile({ onClose, onSaved, admin = false }: { onClose: () => void; onSaved: (user: UserProfile) => void; admin?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [draft, setDraft] = useState<{ name: string; dateOfBirth: string; sex: string; heightCm: string; avatarId: ProfileAvatarId | null }>({ name: "", dateOfBirth: "", sex: "", heightCm: "", avatarId: null });
@@ -42,7 +42,7 @@ export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (u
   }
 
   return <dialog ref={dialog} className="food-dialog profile-dialog" aria-labelledby="profile-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className="profile-heading"><button type="button" className="text-button" aria-label="Back to app" disabled={busy} onClick={onClose}><span aria-hidden="true">←</span> Back</button><h1 id="profile-title">Profile</h1></div>
+    <div className="profile-heading"><button type="button" className="text-button" aria-label={admin ? "Back to admin" : "Back to app"} disabled={busy} onClick={onClose}><span aria-hidden="true">←</span> Back</button><h1 id="profile-title">Profile</h1></div>
     {loading ? <p className="profile-loading" role="status">Loading your profile…</p> : !user ? <div className="form-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : <form aria-label="Your profile" className="profile-form" onSubmit={submit}>
       <div className="food-form-body">
         <fieldset className="profile-picture-picker food-facts" disabled={busy}>
@@ -67,6 +67,6 @@ export function Profile({ onClose, onSaved }: { onClose: () => void; onSaved: (u
       </div>
       <div className="profile-actions"><button type="submit" className="primary-button" disabled={busy || !dirty || !draft.name.trim()}>{busy ? "Saving…" : "Save changes"}</button></div>
     </form>}
-    <div className="profile-signout"><SignOut disabled={busy} /></div>
+    <div className="profile-signout"><SignOut disabled={busy} redirectTo={admin ? "/admin" : "/login"} /></div>
   </dialog>;
 }
