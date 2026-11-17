@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { memo, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { CreditWallet } from "./credit-wallet";
 import { GoalForm } from "./food-goals";
 import { goalNutrients } from "@/lib/food-goals";
 import { FoodForm } from "./food-journal";
@@ -141,13 +142,14 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
     } finally { if (request.current === controller) { setBusy(false); request.current = null; } }
   }
   const waiting = busy || !!state?.pending;
-  const limited = !!state && (state.quota.remainingToday < 1 || state.quota.remainingBudgetUsd < .01);
+  const creditLimited = !!state?.quota.credits && state.quota.credits.available < state.quota.credits.maximumReplyCharge;
+  const limited = creditLimited || !!state && (state.quota.remainingToday < 1 || state.quota.remainingBudgetUsd < .01);
   const canSend = !!state?.quota.configured && !waiting && !loading && !preparing && !limited && (!!text.trim() || photos.length > 0);
   const messages = state?.messages ?? [];
   const visibleOptimistic = optimistic && !messages.some(message => message.id === optimistic.id);
 
   return <section className="food-chat" aria-label="Kay">
-    <div className="chat-toolbar"><button className="text-button" type="button" onClick={() => void load(true)} disabled={loading || busy || !state || !!state?.pending}>New chat</button></div>
+    <div className="chat-toolbar"><CreditWallet status={state?.quota.credits} onStatus={credits => setState(current => current ? { ...current, quota: { ...current.quota, credits } } : current)} /><button className="text-button" type="button" onClick={() => void load(true)} disabled={loading || busy || !state || !!state?.pending}>New chat</button></div>
     <div className={photos.length ? "chat-layout has-photos" : "chat-layout"}>
       <div className="chat-thread" ref={thread} role="log" aria-label="Conversation with Kay" aria-live="polite" onScroll={() => { const element = thread.current; if (element) scrollToEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
         {loading && <p className="chat-status" role="status">Loading your conversation…</p>}
@@ -167,7 +169,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
         </div>}
         <label className="sr-only" htmlFor="food-chat-message">Your message</label>
         <textarea id="food-chat-message" ref={input} rows={2} maxLength={1000} value={text} disabled={waiting || loading || !state || !state.quota.configured} placeholder="Message Kay…" onChange={event => { setText(event.target.value); retry.current = null; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (canSend) event.currentTarget.form?.requestSubmit(); } }} />
-        <div className="chat-composer-bottom"><div className="chat-attach-buttons"><label className="chat-icon-button" title="Take food photo"><ComposerIcon camera /><span className="sr-only">Take food photo</span><input className="sr-only" type="file" capture="environment" accept="image/*" aria-label="Take food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label><label className="chat-icon-button" title="Upload food photo"><ComposerIcon /><span className="sr-only">Upload food photo</span><input className="sr-only" type="file" accept="image/*" multiple aria-label="Upload food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label></div><p className="chat-allowance">{preparing ? "Preparing photo…" : state ? !state.quota.configured ? "AI logging isn’t connected yet." : limited ? "AI allowance used up. The journal is still available." : `${state.quota.remainingToday} AI replies left today` : ""}</p><button className="chat-send" type="submit" aria-label="Send message" disabled={!canSend}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg></button></div>
+        <div className="chat-composer-bottom"><div className="chat-attach-buttons"><label className="chat-icon-button" title="Take food photo"><ComposerIcon camera /><span className="sr-only">Take food photo</span><input className="sr-only" type="file" capture="environment" accept="image/*" aria-label="Take food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label><label className="chat-icon-button" title="Upload food photo"><ComposerIcon /><span className="sr-only">Upload food photo</span><input className="sr-only" type="file" accept="image/*" multiple aria-label="Upload food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label></div><p className="chat-allowance">{preparing ? "Preparing photo…" : state ? !state.quota.configured ? "AI logging isn’t connected yet." : limited ? creditLimited ? "Add credits to continue with Kay." : "AI allowance used up. The journal is still available." : "" : ""}</p><button className="chat-send" type="submit" aria-label="Send message" disabled={!canSend}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg></button></div>
       </form>
     </div>
     {goalReview && <GoalForm goals={goalReview.goals} initialEffectiveFrom={goalReview.effectiveFrom} onClose={() => setGoalReview(null)} saveGoals={async (goals, effectiveFrom) => {

@@ -15,7 +15,7 @@ export default async function AdminPage() {
   const admin = await requireAdmin();
   const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [admin.id]);
   const [rows] = await db.execute<(DatabaseRow & Omit<DirectoryUser, "createdAt"> & { createdAt: Date })[]>(
-    "SELECT id, name, email, role, \"createdAt\" FROM \"user\" ORDER BY \"createdAt\" DESC LIMIT 100",
+    "SELECT u.id, u.name, u.email, u.role, u.\"createdAt\", (COALESCE(w.\"balanceCents\" - w.\"heldCents\",0)::double precision / 100) AS credits, (COALESCE(w.\"multiplierHundred\",200)::double precision / 100) AS multiplier FROM \"user\" u LEFT JOIN \"creditWallet\" w ON w.\"userId\" = u.id ORDER BY u.\"createdAt\" DESC LIMIT 100",
   );
   const [counts] = await db.execute<DatabaseRow[]>(
     "SELECT COUNT(*)::integer AS total, SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::integer AS admins, SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END)::integer AS members FROM \"user\"",
@@ -25,7 +25,7 @@ export default async function AdminPage() {
   );
   const users = rows.map(user => ({
     id: user.id, name: user.name, email: user.email, role: user.role,
-    createdAt: new Date(user.createdAt).toISOString(),
+    createdAt: new Date(user.createdAt).toISOString(), credits: Number(user.credits), multiplier: Number(user.multiplier),
   }));
   const metrics = [
     { label: "Members", value: counts[0].members || 0 },

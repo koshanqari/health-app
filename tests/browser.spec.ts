@@ -37,7 +37,7 @@ test.beforeEach(async ({ context, page }) => {
   await page.route("**/api/food/chat*", async route => {
     if (route.request().method() === "POST") return route.fulfill({ status: 503, json: { message: "Mock provider not configured for this browser test." } });
     const response = await route.fetch(), body = await response.json();
-    if (response.ok()) body.quota = aiQuota;
+    if (response.ok()) body.quota = { ...body.quota, ...aiQuota };
     await route.fulfill({ response, json: body });
   });
 });
@@ -913,4 +913,76 @@ test("admin entry stays at /admin, member screens have no admin links, and admin
     await expect(page.getByRole("link", { name: "Community", exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Open administration", exact: true })).toHaveCount(0);
   } finally { await db.execute('DELETE FROM "user" WHERE email = $1', [email]); }
+});
+
+test("AI credit balance shows approximate replies and contact, updates after replies, and survives new chat", async ({ page }, info) => {
+  await page.route("**/api/food/chat", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async () => Response.json({
+      candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "reply", reply: "I can help you with your food goals.", draft: null, goalDraft: null }) }] } }],
+      usageMetadata: { promptTokenCount: 3000, candidatesTokenCount: 500 },
+    }) });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  const current = await (await page.request.get("/api/credits")).json();
+  const balance = page.getByRole("button", { name: "View AI credits", exact: true });
+  await expect(balance).toContainText(current.available.toFixed(2));
+  await balance.click();
+  const wallet = page.getByRole("dialog", { name: "AI credits", exact: true });
+  await expect(wallet.locator(".credit-total strong")).toHaveText(current.available.toFixed(2));
+  await expect(wallet.locator(".credit-estimate")).toContainText(/About \d+ replies remaining/);
+  await wallet.getByRole("button", { name: "Add credits", exact: true }).click();
+  await expect(wallet.getByRole("link", { name: /Koshan Qari on LinkedIn/ })).toHaveAttribute("href", "https://in.linkedin.com/in/koshanqari");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-credit-wallet.png`, fullPage: true });
+  await wallet.getByRole("button", { name: "Close credits", exact: true }).click();
+  await page.getByLabel("Your message", { exact: true }).fill("Can you help with my food goals?");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByText("I can help you with your food goals.", { exact: true })).toBeVisible();
+  await expect(balance).toContainText((current.available - .30).toFixed(2));
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Hi, I’m Kay.", exact: true })).toBeVisible();
+  await expect(balance).toContainText((current.available - .30).toFixed(2));
+  await db.execute('UPDATE "creditWallet" SET "balanceCents" = 0 WHERE "userId" = $1', [memberId]);
+  await page.reload();
+  await expect(balance).toContainText("0.00");
+  await page.getByLabel("Your message", { exact: true }).fill("This must not use the provider");
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  await balance.click();
+  await expect(wallet.locator(".credit-estimate")).toContainText("About 0 replies remaining");
+  await wallet.getByRole("button", { name: "Close credits", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Log food", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("admin credit controls add an offline top-up, change user pricing and show an audit history", async ({ page }, info) => {
+  await page.goto("/admin");
+  await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Search accounts", { exact: true }).fill(memberEmail);
+  await page.getByRole("button", { name: `Manage credits: ${memberEmail}`, exact: true }).click();
+  const wallet = page.getByRole("dialog", { name: /Credits ·/ });
+  await expect(wallet.locator(".credit-total strong")).toBeVisible();
+  const initial = Number((await wallet.locator(".credit-total strong").innerText()).replaceAll(",", ""));
+  await wallet.getByLabel("Credits to add", { exact: true }).fill("50");
+  await wallet.getByLabel("Money received (₹, optional)", { exact: true }).fill("50");
+  await wallet.getByLabel("Reason or payment reference", { exact: true }).fill("Offline payment reference fixture");
+  await wallet.getByRole("button", { name: "Confirm credits", exact: true }).click();
+  await expect(wallet.locator(".credit-total strong")).toHaveText((initial + 50).toFixed(2));
+  await expect(wallet.locator(".credit-history")).toContainText("Offline payment reference fixture");
+  await expect(wallet.getByLabel("Credits to add", { exact: true })).toHaveValue("");
+  await wallet.getByLabel("Action", { exact: true }).selectOption("pricing");
+  await wallet.getByLabel("Multiplier", { exact: true }).fill("3.5");
+  await wallet.getByLabel("Reason or payment reference", { exact: true }).fill("Updated personal rate");
+  await wallet.getByRole("button", { name: "Save multiplier", exact: true }).click();
+  await expect(wallet.locator(".credit-facts")).toContainText("3.50×");
+  await expect(wallet.locator(".credit-history")).toContainText("Updated personal rate");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-credits.png`, fullPage: true });
+  await wallet.getByRole("button", { name: "Close credits", exact: true }).click();
+  await expect(page.getByRole("button", { name: `Manage credits: ${memberEmail}`, exact: true })).toContainText("3.50×");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // Leave later scenarios at the default rate.
+  await db.execute('UPDATE "creditWallet" SET "multiplierHundred" = 200 WHERE "userId" = $1', [memberId]);
 });

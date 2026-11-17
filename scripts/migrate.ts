@@ -1,5 +1,6 @@
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/lib/auth";
+import { migrateCredits } from "../src/lib/credits";
 import { bootstrapAdmin } from "../src/lib/admin";
 import { db } from "../src/lib/db";
 
@@ -62,6 +63,7 @@ try {
         FOREIGN KEY (scope, "budgetMonth") REFERENCES "foodAiBudget"(scope, month)
       )
     `);
+    await migrateCredits(connection);
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodChat" (
         id TEXT NOT NULL PRIMARY KEY, "userId" TEXT NOT NULL UNIQUE REFERENCES "user"(id) ON DELETE CASCADE,
@@ -112,7 +114,7 @@ try {
   finally { connection.release(); }
   const bootstrap = await bootstrapAdmin(process.env);
   if (bootstrap === "promoted") console.log("Existing account granted administrator access. Sign in at /admin with its usual password.");
-  console.log("Postgres authentication, profiles, food journal, daily goals, AI budget, and chat schemas are ready.");
+  console.log("Postgres authentication, profiles, food journal, daily goals, AI budget, credits, and chat schemas are ready.");
 } catch (error) {
   console.error("Could not migrate Postgres. Check DATABASE_URL and database connectivity.");
   if (error && typeof error === "object" && "code" in error) console.error("Database error code:", String(error.code));

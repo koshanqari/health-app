@@ -4,9 +4,11 @@ import type { DatabaseRow } from "./db";
 import { db } from "./db";
 import { parseFood, type FoodEstimate, type PhotoAnalysisStatus } from "./food";
 
+import { CREDIT_RESERVATION_USD_MICROS, CreditError, getCreditDetails, reserveCredits, settleCredits } from "./credits";
+
 export const FOOD_AI_MODEL = "gemini-3.1-flash-lite";
 export const MAX_PHOTO_BYTES = 1024 * 1024;
-const RESERVATION_MICROS = 10_000; // $0.01 reserved before each bounded request.
+const RESERVATION_MICROS = CREDIT_RESERVATION_USD_MICROS; // $0.01 reserved before each bounded request.
 const PROMPT_VERSION = "food-photo-v1";
 
 export class FoodAiError extends Error {
@@ -62,6 +64,7 @@ export async function foodAiStatus(userId: string, settings = foodAiSettings()):
     [userId, settings.scope, day],
   );
   return {
+    credits: await getCreditDetails(userId, false),
     configured: !!settings.apiKey,
     remainingToday: Math.max(0, Math.min(settings.userDailyLimit - Number(counts[0].own), settings.globalDailyLimit - Number(counts[0].total))),
     monthlyBudgetUsd: settings.monthlyBudgetMicros / 1_000_000,
@@ -100,12 +103,14 @@ async function reserve(userId: string, hash: string, settings: FoodAiSettings) {
     if (Number(budget[0].usedMicros) + RESERVATION_MICROS > settings.monthlyBudgetMicros) {
       throw new FoodAiError(429, "AI_MONTHLY_LIMIT", "The monthly AI allowance is used up. You can still log food manually.");
     }
+    const credit = await reserveCredits(connection, userId);
     const id = randomUUID();
     await connection.execute("UPDATE \"foodAiBudget\" SET \"usedMicros\" = \"usedMicros\" + $1 WHERE scope = $2 AND month = $3", [RESERVATION_MICROS, settings.scope, month]);
     await connection.execute(
       "INSERT INTO \"foodAiUsage\" (id, scope, \"budgetMonth\", \"userId\", \"imageHash\", status, \"costMicros\", \"createdAt\") VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)",
       [id, settings.scope, month, userId, hash, RESERVATION_MICROS, sqlTime(now)],
     );
+    await connection.execute('UPDATE "foodAiUsage" SET "creditReservedCents" = $1, "creditHoldActive" = TRUE, "creditMultiplierHundred" = $2, "creditFxCents" = $3, "creditPriceVersion" = $4 WHERE id = $5', [credit.cents, credit.multiplierHundred, credit.fxCents, credit.priceVersion, id]);
     await connection.commit();
     return { id, month, cached: null };
   } catch (error) { await connection.rollback(); throw error; }
@@ -117,6 +122,8 @@ async function settle(id: string, month: string, settings: FoodAiSettings, cost:
   try {
     await connection.beginTransaction();
     await connection.execute("UPDATE \"foodAiBudget\" SET \"usedMicros\" = \"usedMicros\" - $1 + $2 WHERE scope = $3 AND month = $4", [RESERVATION_MICROS, cost, settings.scope, month]);
+    const [owners] = await connection.execute<DatabaseRow[]>('SELECT "userId" FROM "foodAiUsage" WHERE id = $1', [id]);
+    await settleCredits(connection, owners[0]?.userId ?? null, id, cost, result !== null && !rejected && tokens.input !== null && tokens.output !== null, !result ? "AI request failed · No charge" : rejected ? "Unusable photo · No charge" : tokens.input === null ? "AI reply · Usage unavailable, no charge" : "AI reply");
     const [updated] = await connection.execute<import("./db").DatabaseChange>(
       "UPDATE \"foodAiUsage\" SET status = $1, \"costMicros\" = $2, \"promptTokens\" = $3, \"outputTokens\" = $4, \"resultJson\" = $5, \"cacheExpiresAt\" = $6 WHERE id = $7 AND status = 'pending'",
       [result ? rejected ? "rejected" : "succeeded" : "failed", cost, tokens.input, tokens.output, result ? JSON.stringify(result) : null, result ? sqlTime(new Date(Date.now() + 86_400_000)) : null, id],
@@ -152,7 +159,9 @@ export type FoodAiOptions = { settings?: FoodAiSettings; fetcher?: typeof fetch;
 export async function requestFoodAi<T>(userId: string, hash: string, payload: Record<string, unknown>, parse: (value: unknown) => T, options: FoodAiOptions = {}, isRejected: (value: T) => boolean = () => false) {
   const settings = options.settings ?? foodAiSettings();
   if (!settings.apiKey) throw new FoodAiError(503, "AI_NOT_CONFIGURED", "AI logging isn’t connected yet. You can still log food manually.");
-  const reservation = await reserve(userId, hash, settings);
+  let reservation;
+  try { reservation = await reserve(userId, hash, settings); }
+  catch (error) { if (error instanceof CreditError) throw new FoodAiError(error.status, error.code, error.message); throw error; }
   if (reservation.cached) return { result: reservation.cached as T, analysisId: reservation.id, cached: true, quota: await foodAiStatus(userId, settings) };
   let cost = RESERVATION_MICROS, result: T | null = null;
   const tokens: { input: number | null; output: number | null } = { input: null, output: null };

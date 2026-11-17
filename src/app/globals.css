@@ -566,3 +566,32 @@ h1, h2, h3 { line-height: 1.2; }
   .history-date-picker { font-size: 11px; }
   .history-day-macros { font-size: 10px; gap: 4px 10px; }
 }
+
+/* AI credits use the same compact forms and neutral surfaces as the journal. */
+.chat-toolbar { justify-content: space-between; gap: 12px; align-items: center; }
+.credit-balance { font-size: 12px; text-align: left; }
+.credit-dialog-body { overflow-y: auto; min-height: 0; padding: 3px; margin: -3px; }
+.credit-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin: 4px 0 10px; }
+.credit-total strong { font-size: 38px; letter-spacing: -1px; }
+.credit-total span, .credit-help { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.credit-estimate { font-size: 16px; margin-bottom: 8px; }
+.credit-facts { margin: 20px 0 12px; }
+.credit-facts > div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 0; font-size: 12px; }
+.credit-facts dd { margin: 0; text-align: right; font-weight: 700; }
+.credit-help { margin: 10px 0 16px; }
+.credit-contact { margin-top: 14px; font-size: 13px; line-height: 1.7; }
+.credit-contact a { color: var(--accent-text); text-decoration: underline; }
+.credit-admin-form { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; }
+.credit-admin-form select { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; }
+.credit-history-title { margin-top: 26px; font-size: 16px; }
+.credit-history { list-style: none; padding: 0; margin: 10px 0; }
+.credit-history li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.credit-history li > div { min-width: 0; overflow-wrap: anywhere; }
+.credit-history strong { font-weight: 600; display: block; }
+.credit-history small { display: block; margin-top: 5px; color: var(--muted); line-height: 1.6; }
+.credit-history li > span { flex-shrink: 0; font-weight: 700; }
+.profile-credit-link { padding: 8px 24px; }
+
+.credit-dialog .food-form-heading h2 { min-width: 0; overflow-wrap: anywhere; }
+
+.credit-admin-form .field-help { margin: 8px 0 0; }

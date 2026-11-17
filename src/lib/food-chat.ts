@@ -4,6 +4,7 @@ import { db } from "./db";
 import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, photoModes, type FoodChatPhotoMode, emptySummary, nextFoodDate, parseFood, isGoalDraft, type FoodChatPendingDraft, type FoodChatGoalDraft, type FoodChatDraft, type FoodChatMessage, type FoodChatState, type FoodInput, type FoodSummary } from "./food";
 import { FoodAiError, foodAiSettings, foodAiStatus, normalizeFoodPhoto, requestFoodAi, type FoodAiOptions } from "./food-ai";
 
+import { refundUndeliveredReply } from "./credits";
 import { parseFoodGoalChange } from "./food-goals";
 import { saveFoodGoalChange } from "./food-goal-store";
 
@@ -184,7 +185,7 @@ export async function sendFoodChat(userId: string, input: { requestId: string; v
       await connection.execute("UPDATE \"foodChatMessage\" SET payload = (payload || jsonb_build_object('state', 'failed', 'error', $1::text)) WHERE \"chatId\" = $2 AND \"requestId\" = $3 AND role = 'user'", [error instanceof FoodAiError ? error.message : "The reply was interrupted. Please try again.", chat.id, input.requestId]);
       await connection.execute("UPDATE \"foodChat\" SET \"pendingToken\" = NULL, \"pendingRequestId\" = NULL, \"pendingStartedAt\" = NULL, version = version + 1 WHERE id = $1", [chat.id]);
     });
-    if (completedAnalysisId) await db.execute("UPDATE \"foodAiUsage\" SET \"resultJson\" = NULL, \"cacheExpiresAt\" = NULL WHERE id = $1 AND \"userId\" = $2", [completedAnalysisId, userId]);
+    if (completedAnalysisId) await refundUndeliveredReply(userId, completedAnalysisId);
     throw error;
   }
   return getFoodChat(userId, options);

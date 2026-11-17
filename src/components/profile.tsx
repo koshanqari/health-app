@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { localDateTime } from "@/lib/food";
 import { profileAvatars, type ProfileAvatarId, type UserProfile } from "@/lib/profile";
 import { ProfileAvatar } from "./profile-avatar";
+import { CreditWallet } from "./credit-wallet";
 import { SignOut } from "./sign-out";
 
 export function Profile({ onClose, onSaved, admin = false }: { onClose: () => void; onSaved: (user: UserProfile) => void; admin?: boolean }) {
@@ -67,6 +68,7 @@ export function Profile({ onClose, onSaved, admin = false }: { onClose: () => vo
       </div>
       <div className="profile-actions"><button type="submit" className="primary-button" disabled={busy || !dirty || !draft.name.trim()}>{busy ? "Saving…" : "Save changes"}</button></div>
     </form>}
+    <div className="profile-credit-link"><CreditWallet label="View AI credits" /></div>
     <div className="profile-signout"><SignOut disabled={busy} redirectTo={admin ? "/admin" : "/login"} /></div>
   </dialog>;
 }
