@@ -286,3 +286,38 @@ test("a reply that completes after a reset cannot repopulate the new conversatio
   await assert.rejects(request, code("CHAT_CHANGED"));
   const fresh = await getFoodChat(users[0].id, { settings }); assert.equal(fresh.messages.length, 0); assert.equal(fresh.draft, null);
 });
+
+test("Kay receives current owner height, sex and local age without exact DOB or other profile fields", async () => {
+  await reset(); await reset(1);
+  const settings = config();
+  const contexts: Record<string, any>[] = [];
+  const options = { settings, fetcher: (async (url, init) => {
+    const body = JSON.parse(init!.body as string);
+    const prompt = body.contents[0].parts[0].text as string;
+    const data = JSON.parse(prompt.split("\nLatest user message:\n")[0].split("\n").slice(1).join("\n"));
+    contexts.push(data);
+    assert.equal(prompt.includes("dateOfBirth"), false);
+    assert.deepEqual(Object.keys(data.userProfile).sort(), ["age", "heightCm", "sex"]);
+    return mock({ intent: "reply", reply: "I can use your saved profile details.", draft: null })(url, init);
+  }) as typeof fetch };
+  try {
+    await send(0, "What profile details can you see?", options);
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
+    for (const birthday of ["2000-01-01", "2000-12-31"]) {
+      await db.execute('INSERT INTO "userProfile" ("userId", "dateOfBirth", sex, "heightCm", "avatarId") VALUES ($1, $2::date, $3, $4, $5) ON CONFLICT ("userId") DO UPDATE SET "dateOfBirth" = EXCLUDED."dateOfBirth", sex = EXCLUDED.sex, "heightCm" = EXCLUDED."heightCm"', [users[0].id, birthday, "female", 175.5, "apple"]);
+      await send(0, "Check my current profile", options);
+      const data = contexts.at(-1)!;
+      const today = data.localDateTime.slice(0, 10);
+      const age = Number(today.slice(0, 4)) - 2000 - (today.slice(5) < birthday.slice(5) ? 1 : 0);
+      assert.deepEqual(data.userProfile, { age, heightCm: 175.5, sex: "female" });
+      assert.equal(JSON.stringify(data).includes(birthday), false);
+    }
+    await send(1, "What profile details can you see?", options);
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
+    await db.execute('UPDATE "userProfile" SET sex = $1, "dateOfBirth" = NULL, "heightCm" = NULL WHERE "userId" = $2', ["prefer_not_to_say", users[0].id]);
+    await send(0, "Check my updated profile", options);
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
+  } finally {
+    await db.execute('DELETE FROM "userProfile" WHERE "userId" IN ($1, $2)', users.map(user => user.id));
+  }
+});
