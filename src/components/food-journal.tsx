@@ -109,7 +109,6 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [period, setPeriod] = useState<"day" | "month">("day");
   const [form, setForm] = useState<FoodEntry | "new" | null>(null);
   const [revision, setRevision] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -203,10 +202,6 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
     finally { setDeleting(false); }
   }
 
-  const summary = data?.[period];
-  const share = summary && summary.calories > 0 ? Math.round(summary.unhealthyCalories / summary.calories * 1000) / 10 : null;
-  const periodLabel = date ? new Intl.DateTimeFormat("en", period === "month" ? { month: "long", year: "numeric" } : { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00")) : "";
-
   return <div className="food-journal">
     <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
     {data && <FoodGoalPanel key={date} goals={data.goals ?? null} day={data.day} date={date} onSaved={goals => {
@@ -217,17 +212,12 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
     {!data && loading && <div className="goal-loading" role="status">Loading your daily goals…</div>}
     <div className="journal-controls">
       <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}>‹</button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}>›</button></div>
-      <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>
-      <div className="summary-period" role="group" aria-label="Summary period"><button aria-pressed={period === "day"} onClick={() => setPeriod("day")}>Day</button><button aria-pressed={period === "month"} onClick={() => setPeriod("month")}>Month</button></div>
+      {date !== localDateTime().slice(0, 10) && <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>}
     </div>
     {notice && <p className="journal-notice" role="status">{notice}</p>}
     {error && <div className="form-error" role="alert"><p>{error}</p><button className="text-button" onClick={refreshJournal}>Refresh journal</button></div>}
     {loading && <p className="journal-loading" role="status">Loading your journal…</p>}
-    {data && summary && <>
-      <section className="food-summary" aria-label={period === "day" ? "Daily nutrition summary" : "Monthly nutrition summary"}>
-        <div className="nutrition-total"><p className="summary-caption">{period === "day" ? "Your day" : "Your month"} · {periodLabel}</p><div className="calorie-total"><strong>{format(summary.calories)}</strong><span>kcal logged</span></div><dl className="macro-totals">{(["protein", "carbs", "fat"] as const).map(key => <div key={key}><dt>{key === "protein" ? "Protein" : key === "carbs" ? "Carbs" : "Fat"}</dt><dd>{format(summary[key])}<span> g</span></dd></div>)}</dl></div>
-        <div className="food-choice-summary"><p className="summary-caption">Unhealthy food · {period === "day" ? "this day" : "this month"}</p><p className="choice-count"><strong>{summary.unhealthyEntries}</strong> of {summary.entries} entries</p><p><strong>{format(summary.unhealthyCalories)} kcal</strong> logged as Unhealthy</p><div className="choice-share">{share !== null ? <><strong>{format(share)}%</strong><span>of your logged calories</span></> : <span>No calorie total yet</span>}</div></div>
-      </section>
+    {data && <>
       <section className="meal-journal" aria-labelledby="meal-journal-title"><div className="section-heading"><h2 id="meal-journal-title">Meals for {new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(new Date(date + "T12:00"))}</h2><p>{data.day.entries} {data.day.entries === 1 ? "entry" : "entries"} logged</p></div>
         {data.entries.length === 0 ? <div className="food-empty"><AppIcon name="food" /><h3>A little space for what you ate.</h3><p>Breakfast, a quick snack, or dinner with friends.<br />Start with your first food entry.</p><button className="primary-button" onClick={() => setForm("new")}>Log your first food</button></div>
           : <div className="meal-groups">{[...meals, null].map(meal => {

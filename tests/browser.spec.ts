@@ -105,7 +105,7 @@ test("signup validates confirmation, creates a user, persists login, and signs o
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-member.png`, fullPage: true });
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   for (const tab of [
-    { name: "Food", heading: "Your food journal" },
+    { name: "Food", heading: "Food" },
     { name: "Activity", heading: "Your activity" },
     { name: "Progress", heading: "Your progress" },
   ]) {
@@ -198,11 +198,9 @@ test("food journal saves, edits, summarizes, and deletes food with Healthy as th
   await dialog.getByLabel("Calories (kcal)", { exact: true }).fill("450");
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(entry.getByText("Unhealthy", { exact: true })).toBeVisible();
-  const daily = page.getByRole("region", { name: "Daily nutrition summary" });
-  await expect(daily).toContainText("450");
-  await expect(daily).toContainText("100%");
-  await page.getByRole("button", { name: "Month", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Monthly nutrition summary" })).toContainText("450");
+  await expect(entry).toContainText("450");
+  await expect(page.getByRole("region", { name: "Daily nutrition summary" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Summary period" })).toHaveCount(0);
   await entry.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(dialog.getByRole("radio", { name: "Unhealthy", exact: true })).toBeChecked();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -217,7 +215,7 @@ test("food journal saves, edits, summarizes, and deletes food with Healthy as th
   await entry.getByRole("button", { name: "Delete", exact: true }).click();
   await entry.getByRole("button", { name: "Delete entry", exact: true }).click();
   await expect(page.getByRole("heading", { name: "A little space for what you ate." })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Monthly nutrition summary" })).toContainText("0 entries");
+  await expect(page.getByRole("region", { name: /Meals for/ })).toContainText("0 entries logged");
   await page.getByRole("button", { name: "Log food", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Save food", exact: true })).toBeDisabled();
   await dialog.getByLabel("Calories (kcal)", { exact: true }).fill("225");
@@ -305,8 +303,6 @@ test("tabs switch without network, preserve journal state, and support browser h
   const selectedDate = "2035-08-01";
   await page.getByLabel("Journal date", { exact: true }).fill(selectedDate);
   await expect(page.getByRole("heading", { name: "A little space for what you ate." })).toBeVisible();
-  await page.getByRole("button", { name: "Month", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Monthly nutrition summary" })).toBeVisible();
   await navigation.getByRole("link", { name: "AI", exact: true }).click();
   await expect(page.getByLabel("Your message", { exact: true })).toBeEnabled();
   await page.getByLabel("Your message", { exact: true }).fill("A draft I haven’t sent");
@@ -333,10 +329,10 @@ test("tabs switch without network, preserve journal state, and support browser h
     for (const tab of [
       { name: "Home", heading: "Hi, Test." },
       { name: "AI", heading: "Kay" },
-      { name: "Food", heading: "Your food journal" },
+      { name: "Food", heading: "Food" },
       { name: "Activity", heading: "Your activity" },
       { name: "Progress", heading: "Your progress" },
-      { name: "Food", heading: "Your food journal" },
+      { name: "Food", heading: "Food" },
     ]) {
       await navigation.getByRole("link", { name: tab.name, exact: true }).click();
       if (tab.name === "AI") await expect(page.getByRole("region", { name: "Kay", exact: true })).toBeVisible();
@@ -344,11 +340,11 @@ test("tabs switch without network, preserve journal state, and support browser h
       await expect(navigation.getByRole("link", { name: tab.name, exact: true })).toHaveAttribute("aria-current", "page");
     }
     await expect(page.getByLabel("Journal date", { exact: true })).toHaveValue(selectedDate);
-    await expect(page.getByRole("region", { name: "Monthly nutrition summary" })).toBeVisible();
+    await expect(page.getByRole("region", { name: /Meals for/ })).toBeVisible();
     await page.goBack();
     await expect(page.getByRole("heading", { name: "Your progress", exact: true })).toBeVisible();
     await page.goForward();
-    await expect(page.getByRole("heading", { name: "Your food journal", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Food", exact: true })).toBeVisible();
     await expect(page.getByLabel("Journal date", { exact: true })).toHaveValue(selectedDate);
     await navigation.getByRole("link", { name: "Home", exact: true }).click();
     await page.getByRole("link", { name: /Food journal/ }).click();
@@ -364,7 +360,7 @@ test("tabs switch without network, preserve journal state, and support browser h
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
   }
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Your food journal", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Food", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Food", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
