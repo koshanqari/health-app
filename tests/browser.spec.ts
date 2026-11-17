@@ -839,6 +839,7 @@ test("AI goal help prefills chat, proposes editable goals and saves only after f
   await nav.getByRole("link", { name: "Food", exact: true }).click();
   await page.getByRole("button", { name: "Set goals", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Daily food goals" });
+  await expect(dialog.getByRole("button", { name: "Use suggested macros", exact: true })).toHaveCount(0);
   await dialog.getByLabel("Apply from", { exact: true }).fill("2021-01-01");
   await dialog.getByRole("button", { name: "Take help from AI" }).click();
   await expect(dialog).toHaveCount(0);
@@ -846,6 +847,7 @@ test("AI goal help prefills chat, proposes editable goals and saves only after f
   await expect(input).toBeVisible();
   await expect(input).toHaveValue(/Help me set daily calorie/);
   await expect(input).toHaveValue(/2021-01-01/);
+  await expect(input).not.toHaveValue(/2200|2500|draft ranges/i);
   expect(calls).toBe(0);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.getByText("What is your weight, activity level and objective?", { exact: true })).toBeVisible();

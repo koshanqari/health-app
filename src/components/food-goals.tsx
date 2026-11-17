@@ -12,7 +12,7 @@ const toDraft = (goals: FoodGoals) => Object.fromEntries(goalNutrients.map(key =
 
 export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskAI, saveGoals }: {
   goals: FoodGoals | null; initialEffectiveFrom?: string; onClose: () => void; onSaved: (effectiveFrom: string) => void;
-  onAskAI?: (goals: FoodGoals | null, effectiveFrom: string) => void;
+  onAskAI?: (effectiveFrom: string) => void;
   saveGoals?: (goals: FoodGoals, effectiveFrom: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -45,12 +45,6 @@ export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskA
     });
   }
 
-  function resetMacros() {
-    const suggested = suggestedFoodGoals(Number(draft.calories.min), Number(draft.calories.max));
-    setDraft(current => ({ ...toDraft(suggested), calories: current.calories }));
-    setCustom(new Set());
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!parsed || !isFoodDate(effectiveFrom) || busy) return;
@@ -72,7 +66,7 @@ export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskA
     <form onSubmit={submit} aria-label="Daily food goals">
       <div className="food-form-body">
         <p className="goal-form-intro">A little flexibility for every day. Set a range that works for you.</p>
-        {onAskAI && <button type="button" className="text-button" disabled={busy} onClick={() => onAskAI(parsed, isFoodDate(effectiveFrom) ? effectiveFrom : localDateTime().slice(0, 10))}>Take help from AI <span aria-hidden="true">↗</span></button>}
+        {onAskAI && <button type="button" className="text-button" disabled={busy} onClick={() => onAskAI(isFoodDate(effectiveFrom) ? effectiveFrom : localDateTime().slice(0, 10))}>Take help from AI <span aria-hidden="true">↗</span></button>}
         <fieldset disabled={busy} className="food-facts">
           <div className="goal-input-head" aria-hidden="true"><span /><span>Minimum</span><span>Maximum</span></div>
           <div className="food-input-group">{goalNutrients.map(key => <div className="goal-input-row" key={key}>
@@ -84,8 +78,6 @@ export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskA
           <div className="food-input-group"><div className="food-detail-row"><label htmlFor="goal-effective-from">Apply from</label><input id="goal-effective-from" type="date" required min="2000-01-01" max="2100-12-31" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} /></div></div>
         </fieldset>
         <p className="goal-form-hint">Earlier days keep their targets. This range applies until your next dated goal. Saving the same start date updates that range.</p>
-        <p className="goal-form-hint">Macros start at 25% protein, 50% carbs and 25% fat. Calorie changes update values you haven’t edited.</p>
-        <button type="button" className="text-button goal-reset" disabled={busy || !draft.calories.min.trim() || !draft.calories.max.trim() || !Number.isFinite(Number(draft.calories.min)) || !Number.isFinite(Number(draft.calories.max))} onClick={resetMacros}>Use suggested macros</button>
         {validation && <p className="macro-warning" role="status">{validation}</p>}
         {parsed && bounds.map(bound => {
           const estimate = macroCalorieEstimate(goalMacroValues(parsed!, bound));
@@ -114,7 +106,7 @@ function NutrientProgress({ nutrient, consumed, goals, effectiveFrom }: { nutrie
   </div>;
 }
 
-export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskAI }: { onAskAI?: (goals: FoodGoals | null, effectiveFrom: string) => void; goals: FoodGoals | null; effectiveFrom: string | null; day: FoodSummary; date: string; onSaved: (effectiveFrom: string) => void }) {
+export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskAI }: { onAskAI?: (effectiveFrom: string) => void; goals: FoodGoals | null; effectiveFrom: string | null; day: FoodSummary; date: string; onSaved: (effectiveFrom: string) => void }) {
   const [editing, setEditing] = useState(false);
   const today = new Date(), selected = new Date(date + "T12:00");
   const isToday = today.toDateString() === selected.toDateString();
@@ -123,6 +115,6 @@ export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskA
       <div className="goal-panel-heading"><h2>{isToday ? "Today’s goals" : `Goals for ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(selected)}`}</h2><button className="text-button" onClick={() => setEditing(true)}>{goals ? "Edit goals" : "Set goals"}</button></div>
       {goals ? <div className="goal-progress-grid">{goalNutrients.map(nutrient => <NutrientProgress key={nutrient} nutrient={nutrient} consumed={day[nutrient]} goals={goals} effectiveFrom={effectiveFrom} />)}</div> : <div className="goal-unset"><p>No goal set for this date.</p><p>Set a range and choose when it applies.</p></div>}
     </section>
-    {editing && <GoalForm goals={goals} onAskAI={onAskAI ? (targets, from) => { setEditing(false); onAskAI(targets, from); } : undefined} onClose={() => setEditing(false)} onSaved={value => { onSaved(value); setEditing(false); }} />}
+    {editing && <GoalForm goals={goals} onAskAI={onAskAI ? from => { setEditing(false); onAskAI(from); } : undefined} onClose={() => setEditing(false)} onSaved={value => { onSaved(value); setEditing(false); }} />}
   </>;
 }

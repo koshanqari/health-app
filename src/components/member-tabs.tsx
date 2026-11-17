@@ -6,7 +6,6 @@ import { FoodChat } from "./food-chat";
 import { FoodJournal } from "./food-journal";
 import { Profile } from "./profile";
 import { useRouter } from "next/navigation";
-import { goalNutrients, type FoodGoals } from "@/lib/food-goals";
 import type { ProfileAvatarId } from "@/lib/profile";
 
 const readTab = (search: string): AppTab => {
@@ -43,9 +42,8 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
   useEffect(() => { setDisplayName(name); }, [name]);
   useEffect(() => { setAvatarId(initialAvatarId); }, [initialAvatarId]);
 
-  function askAIForGoals(goals: FoodGoals | null, effectiveFrom: string) {
-    const ranges = goals ? " My draft ranges are: " + goalNutrients.map(key => key + " " + goals[key].min + "–" + goals[key].max + (key === "calories" ? " kcal" : " g")).join("; ") + "." : "";
-    setAiStarter({ id: Date.now(), prompt: "Help me set daily calorie, protein, carbs and fat goals, applying from " + effectiveFrom + ". Use my saved profile, ask for any missing details, then prepare a goal proposal I can review and save." + ranges });
+  function askAIForGoals(effectiveFrom: string) {
+    setAiStarter({ id: Date.now(), prompt: "Help me set daily calorie, protein, carbs and fat goals, applying from " + effectiveFrom + ". Use my saved profile, ask for any missing details, then prepare a goal proposal I can review and save." });
     window.history.pushState(null, "", "/app?tab=chat");
     selectTab("chat");
   }

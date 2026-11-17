@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppIcon } from "./app-header";
-import type { FoodGoals } from "@/lib/food-goals";
 import { FoodGoalPanel } from "./food-goals";
 import { FoodHistory } from "./food-history";
 import { meals, localDateTime, nextFoodDate, macroCalorieEstimate, type FoodEstimate, type FoodEntry, type FoodInput, type FoodJournalData } from "@/lib/food";
@@ -103,7 +102,7 @@ export function FoodForm({ entry, draft, date, onClose, onSaved, saveFood, draft
   </dialog>;
 }
 
-export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAskAI?: (goals: FoodGoals | null, effectiveFrom: string) => void }) {
+export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAskAI?: (effectiveFrom: string) => void }) {
   const journalCache = useRef(new Map<string, { value: FoodJournalData; at: number }>());
   const inFlight = useRef(new Set<string>());
   const [date, setDate] = useState("");
