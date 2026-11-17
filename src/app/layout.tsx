@@ -3,6 +3,8 @@ import "@fontsource-variable/nunito-sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  applicationName: "Daywell",
+  appleWebApp: { capable: true, title: "Daywell", statusBarStyle: "default" },
   title: { default: "Daywell — A healthier everyday", template: "%s · Daywell" },
   description: "A personal space for eating well, moving more, and building healthier everyday habits.",
   robots: { index: false, follow: false },
