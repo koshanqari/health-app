@@ -192,7 +192,6 @@ h1, h2, h3 { line-height: 1.2; }
 .feature-card h3 { font-size: 19px; font-weight: 800; letter-spacing: -.3px; }
 .feature-card p { color: var(--muted); margin-top: 10px; font-size: 13px; line-height: 1.8; }
 .card-link { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 22px; margin-top: auto; font-size: 12px; font-weight: 800; color: var(--accent-text); }
-.card-link > span { font-size: 20px; font-weight: 500; }
 .member-main .account-ready { display: flex; align-items: flex-start; gap: 16px; padding: 22px 26px; margin-top: 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); }
 .member-main .account-ready h2 { font-size: 15px; }
 .member-main .account-ready p { margin-top: 4px; font-size: 12px; }
@@ -240,6 +239,8 @@ h1, h2, h3 { line-height: 1.2; }
 .journal-date { display: flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 4px; }
 .journal-date input { min-width: 0; width: 145px; border: 0; padding: 8px; background: transparent; color: var(--ink); font-size: 13px; font-weight: 750; }
 .date-arrow { width: 34px; height: 34px; background: transparent; color: var(--accent-text); border: 0; border-radius: 50%; font-size: 24px; line-height: 1; }
+.date-arrow svg { vertical-align: middle; }
+.sort-button svg { vertical-align: middle; margin-left: 4px; }
 .date-arrow:hover { background: var(--selected); }
 .journal-notice { color: var(--accent-text); font-size: 13px; margin-bottom: 16px; }
 .journal-loading { padding: 40px 0; color: var(--muted); font-size: 14px; }
@@ -380,7 +381,7 @@ h1, h2, h3 { line-height: 1.2; }
   .food-page-heading .food-log-actions { width: auto; }
 }
 
-.home-chat-link { margin-top: 20px; gap: 14px; }
+.home-chat-link { margin-top: 20px; }
 .food-chat { max-width: 760px; margin: 0 auto; }
 .chat-layout { height: min(680px, calc(100dvh - 365px)); min-height: 330px; display: flex; flex-direction: column; }
 .chat-thread { flex: 1; min-height: 160px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 12px 4px 24px; }
@@ -390,7 +391,6 @@ h1, h2, h3 { line-height: 1.2; }
 .chat-suggestions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 22px; }
 .chat-suggestions button { display: flex; gap: 22px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; color: var(--ink); font-size: 12px; text-align: left; cursor: pointer; }
 .chat-suggestions button:hover { border-color: var(--accent-text); }
-.chat-suggestions button span { margin-left: auto; color: var(--accent-text); }
 .chat-message { margin-bottom: 24px; max-width: 92%; }
 .chat-message-user { width: fit-content; max-width: 82%; margin-left: auto; }
 .chat-speaker { font-size: 10px; color: var(--muted); font-weight: 750; margin-bottom: 6px; }

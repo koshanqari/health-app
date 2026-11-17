@@ -66,7 +66,7 @@ export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskA
     <form onSubmit={submit} aria-label="Daily food goals">
       <div className="food-form-body">
         <p className="goal-form-intro">A little flexibility for every day. Set a range that works for you.</p>
-        {onAskAI && <button type="button" className="text-button" disabled={busy} onClick={() => onAskAI(isFoodDate(effectiveFrom) ? effectiveFrom : localDateTime().slice(0, 10))}>Take help from AI <span aria-hidden="true">↗</span></button>}
+        {onAskAI && <button type="button" className="text-button" disabled={busy} onClick={() => onAskAI(isFoodDate(effectiveFrom) ? effectiveFrom : localDateTime().slice(0, 10))}>Take help from AI</button>}
         <fieldset disabled={busy} className="food-facts">
           <div className="goal-input-head" aria-hidden="true"><span /><span>Minimum</span><span>Maximum</span></div>
           <div className="food-input-group">{goalNutrients.map(key => <div className="goal-input-row" key={key}>

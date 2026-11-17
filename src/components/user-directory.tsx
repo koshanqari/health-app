@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ChevronIcon } from "./app-header";
 import { CreditWallet } from "./credit-wallet";
 import { useRouter } from "next/navigation";
 export type DirectoryUser = { id: string; name: string; email: string; role: string; createdAt: string; credits?: number; multiplier?: number };
@@ -45,7 +46,7 @@ export function UserDirectory({ users, currentUserId }: { users: DirectoryUser[]
     <div className="table-scroll"><table className="account-table">
       <caption className="sr-only">Daywell accounts</caption>
       <thead><tr>{columns.map(column => <th scope="col" key={column.key} aria-sort={sort.key === column.key ? sort.ascending ? "ascending" : "descending" : "none"}>
-        <button type="button" className="sort-button" onClick={() => sortBy(column.key)}>{column.label}{sort.key === column.key && <span aria-hidden="true">{sort.ascending ? " ↑" : " ↓"}</span>}</button>
+        <button type="button" className="sort-button" onClick={() => sortBy(column.key)}>{column.label}{sort.key === column.key && <ChevronIcon direction={sort.ascending ? "up" : "down"} />}</button>
       </th>)}<th scope="col">AI credits</th><th scope="col">Access</th></tr></thead>
       <tbody>{visible.map(user => <tr key={user.id}>
         <td><div className="table-name"><span className="avatar" aria-hidden="true">{user.name.slice(0, 1).toUpperCase()}</span><span>{user.name}</span></div></td>

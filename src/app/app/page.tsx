@@ -43,13 +43,13 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         <h1>Hi, {firstName}.</h1>
         <p className="page-subtitle">Let’s make a little room for feeling good.</p>
         <section className="home-welcome" aria-labelledby="welcome-title">
-          <div><p className="eyebrow">ONE SMALL STEP AT A TIME</p><h2 id="welcome-title">Small steps.<br />Good days ahead.</h2><p>A meal you enjoyed. A walk outside.<br />It all starts with a little care.</p><Link className="primary-button home-chat-link" href="/app?tab=chat" prefetch={false}>Talk to Kay <span aria-hidden="true">↗</span></Link></div>
+          <div><p className="eyebrow">ONE SMALL STEP AT A TIME</p><h2 id="welcome-title">Small steps.<br />Good days ahead.</h2><p>A meal you enjoyed. A walk outside.<br />It all starts with a little care.</p><Link className="primary-button home-chat-link" href="/app?tab=chat" prefetch={false}>Talk to Kay</Link></div>
           <SmallSteps />
         </section>
         <div className="section-heading"><h2>A space for your healthy habits</h2><p>Make a little time for you</p></div>
         <div className="home-cards">{features.map(item => <Link className="feature-card" key={item.id} href={`/app?tab=${item.id}`} prefetch={false}>
           <AppIcon name={item.id} />
-          <h3>{item.title}</h3><p>{item.copy}</p><span className="card-link">{item.id === "food" ? "Log your food" : "Take a look"} <span aria-hidden="true">↗</span></span>
+          <h3>{item.title}</h3><p>{item.copy}</p><span className="card-link">{item.id === "food" ? "Log your food" : "Take a look"}</span>
         </Link>)}</div>
         <section className="account-ready">
           <div className="ready-check" aria-hidden="true">✓</div><div><h2>Your account is ready.</h2><p>Signed in as <strong>{user.email}</strong>.</p></div>

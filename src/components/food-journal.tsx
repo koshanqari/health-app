@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AppIcon } from "./app-header";
+import { AppIcon, ChevronIcon } from "./app-header";
 import { FoodGoalPanel } from "./food-goals";
 import { FoodHistory } from "./food-history";
 import { meals, localDateTime, nextFoodDate, macroCalorieEstimate, type FoodEstimate, type FoodEntry, type FoodInput, type FoodJournalData } from "@/lib/food";
@@ -214,7 +214,7 @@ export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAs
     {!data && loading && <div className="goal-loading" role="status">Loading your daily goals…</div>}
     {date && <FoodHistory active={active} date={date} revision={revision} onSelectDate={changeDate} />}
     <div className="journal-controls">
-      <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}>‹</button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}>›</button></div>
+      <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}><ChevronIcon direction="left" /></button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}><ChevronIcon direction="right" /></button></div>
       {date !== localDateTime().slice(0, 10) && <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>}
     </div>
     {notice && <p className="journal-notice" role="status">{notice}</p>}

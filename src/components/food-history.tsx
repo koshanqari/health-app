@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { ChevronIcon } from "./app-header";
 import { isFoodDate, localDateTime } from "@/lib/food";
 import { goalNutrients, goalVersionForDate, type GoalNutrient } from "@/lib/food-goals";
 import { foodHistoryWindow, historyDayStatus, historyPeriods, shiftHistoryAnchor, type FoodHistoryData, type HistoryPeriod } from "@/lib/food-history";
@@ -123,7 +124,7 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
     <div className="history-heading"><h2>Food history</h2><div className="history-periods" role="group" aria-label="History period">{historyPeriods.map(value => <button key={value} aria-pressed={period === value} onClick={() => { setAnchor(selected ?? anchor); setPeriod(value); setSelected(null); }}>{value}</button>)}</div></div>
     <div className="history-metrics" role="group" aria-label="History nutrient">{goalNutrients.map(value => <button key={value} aria-pressed={nutrient === value} onClick={() => setNutrient(value)}>{labels[value]}</button>)}</div>
     <div className="history-period-navigation">
-      <button className="date-arrow" aria-label="Previous period" disabled={range.start === "2000-01-01"} onClick={() => move(-1)}>‹</button>
+      <button className="date-arrow" aria-label="Previous period" disabled={range.start === "2000-01-01"} onClick={() => move(-1)}><ChevronIcon direction="left" /></button>
       <label className="history-date-picker">
         <span aria-hidden="true">{dateLabel(range.start, { day: "numeric", month: "short" })} – {dateLabel(range.end)}</span>
         <input type="date" aria-label="Choose history date" min="2000-01-01" max={today} value={selected ?? anchor} onClick={event => {
@@ -134,7 +135,7 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
           setAnchor(value); setSelected(value); onSelectDate(value);
         }} />
       </label>
-      <button className="date-arrow" aria-label="Next period" disabled={range.start >= foodHistoryWindow(period, today).start} onClick={() => move(1)}>›</button>
+      <button className="date-arrow" aria-label="Next period" disabled={range.start >= foodHistoryWindow(period, today).start} onClick={() => move(1)}><ChevronIcon direction="right" /></button>
     </div>
     {error && <div className="form-error" role="alert">{error} <button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div>}
     {!visible && !error && <div className="history-loading" role="status">Loading food history…</div>}

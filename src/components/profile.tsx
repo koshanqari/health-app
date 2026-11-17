@@ -43,7 +43,7 @@ export function Profile({ onClose, onSaved, admin = false }: { onClose: () => vo
   }
 
   return <dialog ref={dialog} className="food-dialog profile-dialog" aria-labelledby="profile-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className="profile-heading"><button type="button" className="text-button" aria-label={admin ? "Back to admin" : "Back to app"} disabled={busy} onClick={onClose}><span aria-hidden="true">←</span> Back</button><h1 id="profile-title">Profile</h1></div>
+    <div className="profile-heading"><button type="button" className="text-button" aria-label={admin ? "Back to admin" : "Back to app"} disabled={busy} onClick={onClose}>Back</button><h1 id="profile-title">Profile</h1></div>
     {loading ? <p className="profile-loading" role="status">Loading your profile…</p> : !user ? <div className="form-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : <form aria-label="Your profile" className="profile-form" onSubmit={submit}>
       <div className="food-form-body">
         <fieldset className="profile-picture-picker food-facts" disabled={busy}>
