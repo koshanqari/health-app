@@ -814,3 +814,66 @@ test("preset avatars preview, persist across reloads, reset to initials, and sig
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test("AI goal help prefills chat, proposes editable goals and saves only after final confirmation", async ({ page }, info) => {
+  await db.execute('DELETE FROM "foodGoalVersion" WHERE "userId" = $1', [memberId]);
+  await db.execute('DELETE FROM "foodGoal" WHERE "userId" = $1', [memberId]);
+  let calls = 0;
+  await page.route("**/api/food/chat", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const data = await mockedChatInput(route);
+    const next = await sendFoodChat(memberId, data, { settings: chatSettings, fetcher: async () => {
+      calls++;
+      const value = calls === 1
+        ? { intent: "reply", reply: "What is your weight, activity level and objective?", draft: null, goalDraft: null }
+        : { intent: "goals", reply: "Here is a starting range. Review it before saving.", draft: null, goalDraft: { goals: suggestedFoodGoals(2200, 2500), effectiveFrom: "2021-01-01", assumptions: "Based on the details you provided." } };
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(value) }] } }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 250 } });
+    } });
+    await route.fulfill({ json: next });
+  });
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Food", exact: true }).click();
+  await page.getByRole("button", { name: "Set goals", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Daily food goals" });
+  await dialog.getByLabel("Apply from", { exact: true }).fill("2021-01-01");
+  await dialog.getByRole("button", { name: "Take help from AI" }).click();
+  await expect(dialog).toHaveCount(0);
+  const input = page.getByLabel("Your message", { exact: true });
+  await expect(input).toBeVisible();
+  await expect(input).toHaveValue(/Help me set daily calorie/);
+  await expect(input).toHaveValue(/2021-01-01/);
+  expect(calls).toBe(0);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByText("What is your weight, activity level and objective?", { exact: true })).toBeVisible();
+  await input.fill("I weigh 75 kg, walk daily and want to maintain my weight.");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Review goals", exact: true })).toBeVisible();
+  expect(await page.locator(".chat-goal-draft").evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-ai-goal-proposal.png`, fullPage: true });
+  await page.getByRole("button", { name: "Review goals", exact: true }).click();
+  await expect(dialog.getByLabel("Minimum calories (kcal)", { exact: true })).toHaveValue("2200");
+  expect((await db.execute<DatabaseRow[]>('SELECT * FROM "foodGoalVersion" WHERE "userId" = $1', [memberId]))[0]).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await nav.getByRole("link", { name: "Food", exact: true }).click();
+  await expect(page.getByText("No goal set for this date.", { exact: true })).toBeVisible();
+  await nav.getByRole("link", { name: "AI", exact: true }).click();
+  await page.getByRole("button", { name: "Review goals", exact: true }).click();
+  await dialog.getByLabel("Maximum calories (kcal)", { exact: true }).fill("2600");
+  await dialog.getByLabel("Maximum protein (g)", { exact: true }).fill("400");
+  await expect(dialog.getByText(/Maximum macros suggest about/)).toBeVisible();
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-ai-goal-review.png`, fullPage: true });
+  await dialog.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review goals", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Saved goals", { exact: true })).toContainText("Saved");
+  await nav.getByRole("link", { name: "Food", exact: true }).click();
+  await expect(page.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuemax", "2600");
+  await page.getByRole("button", { name: "Edit goals", exact: true }).click();
+  await expect(dialog.getByLabel("Maximum protein (g)", { exact: true })).toHaveValue("400");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

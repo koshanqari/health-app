@@ -6,6 +6,7 @@ import { FoodChat } from "./food-chat";
 import { FoodJournal } from "./food-journal";
 import { Profile } from "./profile";
 import { useRouter } from "next/navigation";
+import { goalNutrients, type FoodGoals } from "@/lib/food-goals";
 import type { ProfileAvatarId } from "@/lib/profile";
 
 const readTab = (search: string): AppTab => {
@@ -17,6 +18,7 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
   name: string; initialAvatarId?: ProfileAvatarId | null; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
   home: ReactNode; activity: ReactNode; progress: ReactNode;
 }) {
+  const [aiStarter, setAiStarter] = useState<{ id: number; prompt: string } | null>(null);
   const [tab, setTab] = useState(initialTab);
   const [profileOpen, setProfileOpen] = useState(initialProfileOpen);
   const [displayName, setDisplayName] = useState(name);
@@ -40,6 +42,13 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
   }, []);
   useEffect(() => { setDisplayName(name); }, [name]);
   useEffect(() => { setAvatarId(initialAvatarId); }, [initialAvatarId]);
+
+  function askAIForGoals(goals: FoodGoals | null, effectiveFrom: string) {
+    const ranges = goals ? " My draft ranges are: " + goalNutrients.map(key => key + " " + goals[key].min + "–" + goals[key].max + (key === "calories" ? " kcal" : " g")).join("; ") + "." : "";
+    setAiStarter({ id: Date.now(), prompt: "Help me set daily calorie, protein, carbs and fat goals, applying from " + effectiveFrom + ". Use my saved profile, ask for any missing details, then prepare a goal proposal I can review and save." + ranges });
+    window.history.pushState(null, "", "/app?tab=chat");
+    selectTab("chat");
+  }
 
   function openProfile() {
     const url = new URL(window.location.href);
@@ -80,8 +89,8 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
       <main id="main-content" className={tab === "chat" ? "workspace-main member-main ai-main" : "workspace-main member-main"}>
         {notice}
         <div hidden={tab !== "home"}>{home}</div>
-        <div hidden={tab !== "chat"}><FoodChat active={tab === "chat"} /></div>
-        <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} /></div>
+        <div hidden={tab !== "chat"}><FoodChat active={tab === "chat"} starter={aiStarter} /></div>
+        <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} onAskAI={askAIForGoals} /></div>
         <div hidden={tab !== "activity"}>{activity}</div>
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { memo, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { GoalForm } from "./food-goals";
+import { goalNutrients } from "@/lib/food-goals";
 import { FoodForm } from "./food-journal";
 import { foodRequestId, prepareFoodPhoto } from "@/lib/food-photo-client";
-import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, type FoodChatPhotoMode, macroCalorieEstimate, type FoodChatDraft, type FoodChatMessage, type FoodChatState, type FoodInput } from "@/lib/food";
+import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, type FoodChatPhotoMode, macroCalorieEstimate, type FoodChatGoalDraft, type FoodChatDraft, type FoodChatMessage, type FoodChatState, type FoodInput } from "@/lib/food";
 
 const numbers = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const dates = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" });
@@ -14,7 +16,7 @@ function ComposerIcon({ camera = false }: { camera?: boolean }) {
   return <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{camera ? <><path d="M4 6h3l2-3h6l2 3h3a1 1 0 0 1 1 1v12H3V7a1 1 0 0 1 1-1Z" /><circle cx="12" cy="12" r="4" /></> : <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1" /><path d="m3 17 5-5 4 4 3-3 6 6" /></>}</svg>;
 }
 
-export function FoodChat({ active }: { active: boolean }) {
+export function FoodChat({ active, starter }: { active: boolean; starter?: { id: number; prompt: string } | null }) {
   const [state, setState] = useState<FoodChatState | null>(null);
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<Attachment[]>([]);
@@ -25,6 +27,8 @@ export function FoodChat({ active }: { active: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [optimistic, setOptimistic] = useState<FoodChatMessage | null>(null);
+  const [goalReview, setGoalReview] = useState<FoodChatGoalDraft | null>(null);
+  const usedStarter = useRef<number | null>(null);
   const [review, setReview] = useState<FoodChatDraft | null>(null);
   const [notice, setNotice] = useState("");
   const initial = useRef(false), selection = useRef(0);
@@ -55,13 +59,20 @@ export function FoodChat({ active }: { active: boolean }) {
         const response = await fetch("/api/food/chat", { method: "DELETE" });
         const next = await response.json();
         if (!response.ok) throw new Error(next.message || "We couldn’t start a new chat.");
-        selection.current++; setPreparing(false); clearComposer(); setReview(null); setNotice(""); scrollToEnd.current = true; apply(next);
+        selection.current++; setPreparing(false); clearComposer(); setReview(null); setGoalReview(null); setNotice(""); scrollToEnd.current = true; apply(next);
       } else await refresh();
     } catch (error) { setError(error instanceof Error ? error.message : "We couldn’t load the conversation."); }
     finally { setLoading(false); }
   }
   useEffect(() => { if (active && !initial.current) { initial.current = true; void load(true); } }, [active]);
-  useEffect(() => { if (!active) setReview(null); }, [active]);
+  useEffect(() => { if (!active) { setReview(null); setGoalReview(null); } }, [active]);
+  useEffect(() => {
+    if (!active || loading || busy || !state || state.pending || !starter || usedStarter.current === starter.id) return;
+    usedStarter.current = starter.id;
+    // This explicit shortcut replaces only composer contents, not the active conversation.
+    selection.current++; setPreparing(false); clearComposer(); setText(starter.prompt); setNotice("");
+    input.current?.focus();
+  }, [active, loading, busy, state, starter]);
   useEffect(() => () => { request.current?.abort(); selection.current++; for (const photo of attachments.current) URL.revokeObjectURL(photo.url); }, []);
   useEffect(() => {
     if (active && scrollToEnd.current && thread.current) thread.current.scrollTop = (state?.messages.length || optimistic) ? thread.current.scrollHeight : 0;
@@ -141,8 +152,9 @@ export function FoodChat({ active }: { active: boolean }) {
       <div className="chat-thread" ref={thread} role="log" aria-label="Conversation with Kay" aria-live="polite" onScroll={() => { const element = thread.current; if (element) scrollToEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
         {loading && <p className="chat-status" role="status">Loading your conversation…</p>}
         {state && messages.length === 0 && !visibleOptimistic && <div className="chat-empty"><h2>Hi, I’m Kay.</h2><p>Start with a message or a few photos.</p><div className="chat-suggestions">{["I had poha and chai for breakfast", "Show today’s logged totals"].map(example => <button type="button" key={example} onClick={() => { setText(example); input.current?.focus(); }}>{example} <span aria-hidden="true">↗</span></button>)}</div></div>}
-        {messages.map(message => <ChatMessage key={message.id} message={message} activeDraft={state?.draft?.draftId} busy={waiting} onReview={setReview} />)}
+        {messages.map(message => <ChatMessage key={message.id} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting} onReview={setReview} />)}
         {state?.draft && !messages.some(message => message.id === state.draft!.draftId) && <ChatMessage message={{ id: state.draft.draftId, requestId: state.draft.draftId, sequence: 0, role: "assistant", content: "Your meal draft is still ready to review.", createdAt: "", payload: { state: "ready", draft: state.draft } }} activeDraft={state.draft.draftId} busy={waiting} onReview={setReview} />}
+        {state?.goalDraft && !messages.some(message => message.id === state.goalDraft!.draftId) && <ChatMessage message={{ id: state.goalDraft.draftId, requestId: state.goalDraft.draftId, sequence: 0, role: "assistant", content: "Your goal proposal is still ready to review.", createdAt: "", payload: { state: "ready", goalDraft: state.goalDraft } }} activeGoalDraft={state.goalDraft.draftId} busy={waiting} onReview={setReview} onReviewGoals={setGoalReview} />}
         {visibleOptimistic && <ChatMessage message={optimistic} busy activeDraft={undefined} onReview={setReview} />}
         {waiting && <p className="chat-typing" role="status">Working on your reply… <span>You can switch tabs.</span></p>}
       </div>
@@ -158,6 +170,12 @@ export function FoodChat({ active }: { active: boolean }) {
         <div className="chat-composer-bottom"><div className="chat-attach-buttons"><label className="chat-icon-button" title="Take food photo"><ComposerIcon camera /><span className="sr-only">Take food photo</span><input className="sr-only" type="file" capture="environment" accept="image/*" aria-label="Take food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label><label className="chat-icon-button" title="Upload food photo"><ComposerIcon /><span className="sr-only">Upload food photo</span><input className="sr-only" type="file" accept="image/*" multiple aria-label="Upload food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label></div><p className="chat-allowance">{preparing ? "Preparing photo…" : state ? !state.quota.configured ? "AI logging isn’t connected yet." : limited ? "AI allowance used up. The journal is still available." : `${state.quota.remainingToday} AI replies left today` : ""}</p><button className="chat-send" type="submit" aria-label="Send message" disabled={!canSend}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg></button></div>
       </form>
     </div>
+    {goalReview && <GoalForm goals={goalReview.goals} initialEffectiveFrom={goalReview.effectiveFrom} onClose={() => setGoalReview(null)} saveGoals={async (goals, effectiveFrom) => {
+      const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: goalReview.draftId, goals: { ...goals, effectiveFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) });
+      const next = await response.json();
+      if (!response.ok) { void refresh().catch(() => {}); throw new Error(next.message || "We couldn’t save your goals. Try again."); }
+      apply(next);
+    }} onSaved={() => { setGoalReview(null); setNotice("Your food goals are saved."); window.dispatchEvent(new Event("food-goals-saved")); }} />}
     {review && <FoodForm entry={null} draft={review} date={review.eatenAtLocal.slice(0, 10)} draftLabel="Food estimate" saveLabel={review.targetEntryId ? "Save correction" : "Log meal"} onClose={() => setReview(null)} saveFood={async (food: FoodInput) => {
       const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: review.draftId, food }) });
       const next = await response.json();
@@ -167,8 +185,8 @@ export function FoodChat({ active }: { active: boolean }) {
   </section>;
 }
 
-const ChatMessage = memo(function ChatMessage({ message, activeDraft, busy, onReview }: { message: FoodChatMessage; activeDraft?: string; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
-  const { payload } = message, draft = payload.draft;
+const ChatMessage = memo(function ChatMessage({ message, activeDraft, activeGoalDraft, busy, onReview, onReviewGoals }: { message: FoodChatMessage; activeDraft?: string; activeGoalDraft?: string; onReviewGoals?: (draft: FoodChatGoalDraft) => void; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
+  const { payload } = message, draft = payload.draft, goalDraft = payload.goalDraft;
   const photoCount = payload.photoCount ?? (payload.hasPhoto ? 1 : 0);
   const mismatch = draft ? macroCalorieEstimate(draft) : null;
   return <article className={`chat-message chat-message-${message.role}`} aria-label={message.role === "user" ? "Your chat message" : "Kay reply"}>
@@ -176,6 +194,13 @@ const ChatMessage = memo(function ChatMessage({ message, activeDraft, busy, onRe
     <div className="chat-message-content"><p className="chat-text">{message.content}</p>
       {photoCount > 0 && <span className="chat-photo-label"><ComposerIcon /> {photoCount === 1 ? "Photo attached" : `${photoCount} photos attached`}{photoCount > 1 && payload.photoMode === "angles" ? " · Same food, different angles" : photoCount > 1 && payload.photoMode === "meal" ? " · Different dishes" : ""}</span>}
       {payload.state === "failed" && <p className="chat-failed">Reply interrupted. Resend your message to try again.</p>}
+      {goalDraft && <div className="chat-food-draft chat-goal-draft" aria-label={payload.state === "logged" ? "Saved goals" : "Goal proposal"}>
+        <div className="chat-draft-heading"><h3>Daily food goals</h3><span>{payload.state === "logged" ? "Saved" : "Proposal"}</span></div>
+        <dl className="chat-nutrition">{goalNutrients.map(key => <div key={key}><dt>{key === "calories" ? "Calories" : key[0].toUpperCase() + key.slice(1)}</dt><dd>{number(goalDraft.goals[key].min)}–{number(goalDraft.goals[key].max)} <small>{key === "calories" ? "kcal" : "g"}</small></dd></div>)}</dl>
+        <p className="chat-draft-meta">Apply from {dates.format(new Date(goalDraft.effectiveFrom + "T12:00"))}</p>
+        {goalDraft.assumptions && <p className="chat-assumptions">{goalDraft.assumptions}</p>}
+        {payload.state === "logged" ? <p className="chat-saved"><span aria-hidden="true">✓</span> Goals saved. <Link href="/app?tab=food" prefetch={false}>View goals</Link></p> : activeGoalDraft === goalDraft.draftId ? <button className="primary-button" type="button" disabled={busy} onClick={() => onReviewGoals?.(goalDraft)}>Review goals</button> : <p className="chat-old-draft">Earlier proposal · See the latest reply.</p>}
+      </div>}
       {draft && <div className="chat-food-draft" aria-label={payload.state === "logged" ? "Logged meal" : "Meal draft"}>
         <div className="chat-draft-heading"><h3>{draft.name || "Food entry"}</h3><span>{payload.state === "logged" ? payload.operation === "update" ? "Updated" : "Logged" : draft.targetEntryId ? "Correction" : "Estimate"}</span></div>
         <dl className="chat-nutrition">{[["Calories", number(draft.calories), "kcal"], ["Fat", number(draft.fat), "g"], ["Protein", number(draft.protein), "g"], ["Carbs", number(draft.carbs), "g"]].map(([label, value, unit]) => <div key={label}><dt>{label}</dt><dd>{value} <small>{unit}</small></dd></div>)}</dl>

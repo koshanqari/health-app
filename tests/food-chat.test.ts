@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { DatabaseRow } from "../src/lib/db";
 import { db } from "../src/lib/db";
-import { confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "../src/lib/food-chat";
+import { confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "../src/lib/food-chat";
 import { FoodAiError, type FoodAiOptions, type FoodAiSettings } from "../src/lib/food-ai";
+import { suggestedFoodGoals } from "../src/lib/food-goals";
 import { MAX_CHAT_PHOTO_BYTES, MAX_CHAT_PHOTOS, parseFood } from "../src/lib/food";
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3000";
@@ -319,5 +320,74 @@ test("Kay receives current owner height, sex and local age without exact DOB or 
     assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
   } finally {
     await db.execute('DELETE FROM "userProfile" WHERE "userId" IN ($1, $2)', users.map(user => user.id));
+  }
+});
+
+test("goal proposals require confirmation, allow edited dated ranges, and save atomically and idempotently", async () => {
+  await reset();
+  await db.execute('DELETE FROM "foodGoalVersion" WHERE "userId" = $1', [users[0].id]);
+  const goals = suggestedFoodGoals(2200, 2500);
+  const options = { settings: config(), fetcher: mock({ intent: "goals", reply: "Review these goals before saving.", draft: null, goalDraft: { goals, effectiveFrom: "2026-01-01", assumptions: "Based on the targets you supplied." } }) };
+  const first = await send(0, "Set my calorie goal to 2200–2500 and suggest macros", options);
+  assert.equal(first.draft, null);
+  assert.deepEqual(first.goalDraft!.goals, goals);
+  assert.equal((await foods()).length, 0);
+  const versions = async () => (await db.execute<DatabaseRow[]>(`SELECT targets, to_char("effectiveFrom", 'YYYY-MM-DD') AS "effectiveFrom" FROM "foodGoalVersion" WHERE "userId" = $1 ORDER BY "effectiveFrom"`, [users[0].id]))[0];
+  assert.equal((await versions()).length, 0);
+  await assert.rejects(confirmFoodChatGoals(users[1].id, first.goalDraft!.draftId, { ...goals }, options), code("CHAT_DRAFT"));
+  await assert.rejects(confirmFoodChat(users[0].id, first.goalDraft!.draftId, meal, options), code("CHAT_DRAFT"));
+  await assert.rejects(confirmFoodChatGoals(users[0].id, first.goalDraft!.draftId, { ...goals, calories: { min: 3000, max: 2000 } }, options), code("CHAT_GOALS"));
+  assert.equal((await versions()).length, 0);
+  const edited = suggestedFoodGoals(2300, 2600);
+  const saves = await Promise.all([0, 1].map(() => confirmFoodChatGoals(users[0].id, first.goalDraft!.draftId, { ...edited, effectiveFrom: "2026-02-01", timeZone: "Asia/Kolkata" }, options)));
+  assert.ok(saves.every(state => !state.goalDraft && !state.draft));
+  assert.equal((await versions()).length, 1);
+  assert.deepEqual((await versions())[0], { targets: edited, effectiveFrom: "2026-02-01" });
+  const saved = saves[0].messages.find(message => message.id === first.goalDraft!.draftId)!;
+  assert.equal(saved.payload.state, "logged");
+  assert.deepEqual(saved.payload.goalDraft!.goals, edited);
+  await confirmFoodChatGoals(users[0].id, first.goalDraft!.draftId, { ...goals, effectiveFrom: "2026-03-01" }, options);
+  assert.equal((await versions()).length, 1); // A retry cannot overwrite a confirmed proposal.
+  const later = await send(0, "Prepare my next goal phase", options);
+  const response = await fetch(base + "/api/food/chat", { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ draftId: later.goalDraft!.draftId, goals: { ...goals, effectiveFrom: "2026-03-01", timeZone: "Asia/Kolkata" } }) });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).goalDraft, null);
+  assert.deepEqual((await versions()).map(row => row.effectiveFrom), ["2026-02-01", "2026-03-01"]);
+});
+
+test("revised, replaced and reset goal proposals cannot save stale targets or log food", async () => {
+  await reset();
+  const goals = suggestedFoodGoals();
+  const options = { settings: config(), fetcher: mock({ intent: "goals", reply: "Review your targets.", draft: null, goalDraft: { goals, effectiveFrom: "2026-04-01", assumptions: "" } }) };
+  const first = (await send(0, "Prepare goals", options)).goalDraft!;
+  let seenCurrent = false;
+  const second = (await send(0, "Increase my calorie range", { ...options, fetcher: async (url, init) => {
+    const body = JSON.parse(init!.body as string);
+    seenCurrent = body.contents[0].parts[0].text.includes(first.draftId);
+    return mock({ intent: "goals", reply: "Updated proposal.", draft: null, goalDraft: { goals: suggestedFoodGoals(2400, 2700), effectiveFrom: "2026-04-01", assumptions: "" } })(url, init);
+  } })).goalDraft!;
+  assert.equal(seenCurrent, true);
+  await assert.rejects(confirmFoodChatGoals(users[0].id, first.draftId, goals, options), code("CHAT_DRAFT_CHANGED"));
+  const mealDraft = (await send(0, "I ate poha", { ...options, fetcher: mock() })).draft!;
+  await assert.rejects(confirmFoodChatGoals(users[0].id, second.draftId, goals, options), code("CHAT_DRAFT_CHANGED"));
+  const third = (await send(0, "Back to goals", options)).goalDraft!;
+  await assert.rejects(confirmFoodChat(users[0].id, mealDraft.draftId, meal, options), code("CHAT_DRAFT_CHANGED"));
+  await resetFoodChat(users[0].id, options);
+  await assert.rejects(confirmFoodChatGoals(users[0].id, third.draftId, goals, options), code("CHAT_DRAFT"));
+  assert.equal((await foods()).length, 0);
+});
+
+test("malformed AI goal ranges and dates fail without replacing a valid proposal", async () => {
+  await reset();
+  const goals = suggestedFoodGoals();
+  const options = { settings: config(), fetcher: mock({ intent: "goals", reply: "Review your targets.", draft: null, goalDraft: { goals, effectiveFrom: "2026-05-01", assumptions: "" } }) };
+  const first = (await send(0, "Prepare goals", options)).goalDraft!;
+  for (const goalDraft of [
+    { goals: { ...goals, fat: { min: -1, max: 20 } }, effectiveFrom: "2026-05-01", assumptions: "" },
+    { goals, effectiveFrom: "2026-02-30", assumptions: "" },
+    { goals: { calories: goals.calories }, effectiveFrom: "2026-05-01", assumptions: "" },
+  ]) {
+    await assert.rejects(send(0, "Revise targets", { ...options, fetcher: mock({ intent: "goals", reply: "Targets", draft: null, goalDraft }) }), code("AI_INVALID_RESPONSE"));
+    assert.equal((await getFoodChat(users[0].id, options)).goalDraft!.draftId, first.draftId);
   }
 });

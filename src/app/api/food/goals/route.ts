@@ -1,7 +1,9 @@
-import { db, type DatabaseRow } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { parseFoodGoalChange } from "@/lib/food-goals";
+
+import { saveFoodGoalChange } from "@/lib/food-goal-store";
 
 export const runtime = "nodejs";
 const response = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -22,11 +24,7 @@ export async function PUT(request: Request) {
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
-      await connection.execute('SELECT pg_advisory_xact_lock(1835462104, hashtext($1))', [session.user.id]);
-      await connection.execute('INSERT INTO "foodGoalVersion" ("userId", "effectiveFrom", targets) VALUES ($1, $2::date, $3::jsonb) ON CONFLICT ("userId", "effectiveFrom") DO UPDATE SET targets = EXCLUDED.targets, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')', [session.user.id, change.effectiveFrom, JSON.stringify(change.goals)]);
-      // Keep the legacy snapshot compatible during rollout; reads use dated versions.
-      const [active] = await connection.execute<DatabaseRow[]>('SELECT targets FROM "foodGoalVersion" WHERE "userId" = $1 AND "effectiveFrom" <= $2::date ORDER BY "effectiveFrom" DESC LIMIT 1', [session.user.id, change.today]);
-      if (active.length) await connection.execute('INSERT INTO "foodGoal" ("userId", targets) VALUES ($1, $2::jsonb) ON CONFLICT ("userId") DO UPDATE SET targets = EXCLUDED.targets, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')', [session.user.id, JSON.stringify(active[0].targets)]);
+      await saveFoodGoalChange(connection, session.user.id, change);
       await connection.commit();
     } catch (error) { await connection.rollback(); throw error; }
     finally { connection.release(); }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppIcon } from "./app-header";
+import type { FoodGoals } from "@/lib/food-goals";
 import { FoodGoalPanel } from "./food-goals";
 import { FoodHistory } from "./food-history";
 import { meals, localDateTime, nextFoodDate, macroCalorieEstimate, type FoodEstimate, type FoodEntry, type FoodInput, type FoodJournalData } from "@/lib/food";
@@ -102,7 +103,7 @@ export function FoodForm({ entry, draft, date, onClose, onSaved, saveFood, draft
   </dialog>;
 }
 
-export function FoodJournal({ active = true }: { active?: boolean }) {
+export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAskAI?: (goals: FoodGoals | null, effectiveFrom: string) => void }) {
   const journalCache = useRef(new Map<string, { value: FoodJournalData; at: number }>());
   const inFlight = useRef(new Set<string>());
   const [date, setDate] = useState("");
@@ -187,8 +188,10 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
       if (savedDate) setDate(savedDate);
       setRevision(value => value + 1);
     }
+    function goalsChanged() { invalidateJournal(); setRevision(value => value + 1); }
     window.addEventListener("food-chat-saved", changed);
-    return () => window.removeEventListener("food-chat-saved", changed);
+    window.addEventListener("food-goals-saved", goalsChanged);
+    return () => { window.removeEventListener("food-chat-saved", changed); window.removeEventListener("food-goals-saved", goalsChanged); };
   }, []);
 
   async function deleteEntry(id: string) {
@@ -205,7 +208,7 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
 
   return <div className="food-journal">
     <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
-    {data && <FoodGoalPanel key={date} goals={data.goals ?? null} effectiveFrom={data.goalEffectiveFrom ?? null} day={data.day} date={date} onSaved={effectiveFrom => {
+    {data && <FoodGoalPanel onAskAI={onAskAI} key={date} goals={data.goals ?? null} effectiveFrom={data.goalEffectiveFrom ?? null} day={data.day} date={date} onSaved={effectiveFrom => {
       setNotice(`Goals saved from ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(effectiveFrom + "T12:00"))}.`);
       refreshJournal();
     }} />}
