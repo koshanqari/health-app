@@ -2,7 +2,7 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { db, type DatabaseRow } from "../src/lib/db";
-import { administerCredits, creditCharge, CreditError, getCreditDetails, refundUndeliveredReply, reserveCredits, settleCredits } from "../src/lib/credits";
+import { administerCredits, creditCharge, creditSettings, migrateCredits, CreditError, getCreditDetails, refundUndeliveredReply, reserveCredits, settleCredits } from "../src/lib/credits";
 import { FoodAiError, requestFoodAi, type FoodAiSettings } from "../src/lib/food-ai";
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
@@ -20,6 +20,13 @@ before(async () => {
     const response = await fetch(base + "/api/auth/sign-up/email", { method: "POST", headers: { Origin: base, "Content-Type": "application/json", "X-Forwarded-For": `198.27.${Math.floor(Math.random() * 240) + 1}.${index + 1}` }, body: JSON.stringify({ name: "Credit fixture", email: `credits-${randomUUID()}@example.com`, password: randomUUID() + "-Credits!", credits: 9999, multiplier: 0 }) });
     assert.equal(response.status, 200);
     users.push({ id: (await response.json()).user.id, cookie: response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ") });
+  }
+  const defaults = creditSettings();
+  for (const user of users) {
+    const wallet = await getCreditDetails(user.id);
+    assert.equal(wallet.balance, defaults.welcomeCents / 100);
+    assert.equal(wallet.multiplier, defaults.defaultMultiplierHundred / 100);
+    assert.equal(wallet.transactions.filter(row => row.kind === "welcome").length, 1);
   }
   await db.execute('UPDATE "user" SET role = \'admin\' WHERE id = $1', [users[1].id]);
 });
@@ -40,7 +47,7 @@ test("welcome credits are granted once, members see only their wallet, and input
     const wallet = await result.json();
     assert.equal(wallet.balance, 20); assert.equal(wallet.available, 20); assert.equal("multiplier" in wallet, false); assert.equal("maximumReplyCharge" in wallet, false); assert.equal(wallet.canSend, true);
     assert.equal(wallet.transactions.filter((row: { kind: string }) => row.kind === "welcome").length, 1);
-    assert.equal(wallet.transactions.find((row: { kind: string }) => row.kind === "welcome").amount, 20);
+    assert.equal(wallet.transactions.find((row: { kind: string }) => row.kind === "welcome").amount, creditSettings().welcomeCents / 100);
     assert.ok(wallet.estimatedReplies > 0);
   }
   assert.equal((await fetch(base + "/api/credits")).status, 401);
@@ -165,4 +172,41 @@ test("an undeliverable reply creates one compensating refund without deleting th
   assert.equal(wallet.balance, 20);
   assert.equal(wallet.transactions.filter(item => item.kind === "usage").length, 1);
   assert.equal(wallet.transactions.filter(item => item.kind === "refund").length, 1);
+});
+
+test("signup default configuration validates rates and migration preserves existing balances and custom rates", async () => {
+  const oldWelcome = process.env.AI_WELCOME_CREDITS, oldRate = process.env.AI_DEFAULT_MULTIPLIER;
+  const connection = await db.getConnection();
+  try {
+    delete process.env.AI_WELCOME_CREDITS; delete process.env.AI_DEFAULT_MULTIPLIER;
+    assert.equal(creditSettings().welcomeCents, 5000);
+    assert.equal(creditSettings().defaultMultiplierHundred, 333);
+    process.env.AI_WELCOME_CREDITS = "75"; process.env.AI_DEFAULT_MULTIPLIER = "4.25";
+    assert.equal(creditSettings().welcomeCents, 7500);
+    assert.equal(creditSettings().defaultMultiplierHundred, 425);
+    for (const value of ["0", "10.01", "3.333", "invalid"]) {
+      process.env.AI_DEFAULT_MULTIPLIER = value;
+      assert.throws(() => creditSettings(), CreditError);
+    }
+    process.env.AI_DEFAULT_MULTIPLIER = "4.25";
+    await connection.beginTransaction();
+    await migrateCredits(connection);
+    const [rows] = await connection.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [users[0].id]);
+    assert.equal(Number(rows[0].balanceCents), 2000);
+    assert.equal(rows[0].multiplierHundred, 200);
+    const [ledger] = await connection.execute<DatabaseRow[]>('SELECT COUNT(*)::integer AS count FROM "creditLedger" WHERE "userId" = $1 AND kind = \'welcome\'', [users[0].id]);
+    assert.equal(ledger[0].count, 1);
+    const freshId = randomUUID();
+    await connection.execute(`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+      VALUES ($1, 'Defaults fixture', $2, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, [freshId, `defaults-${freshId}@example.com`]);
+    const [fresh] = await connection.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [freshId]);
+    assert.equal(Number(fresh[0].balanceCents), 7500);
+    assert.equal(fresh[0].multiplierHundred, 425);
+    // Roll back the temporary defaults so other signup tests keep their configured settings.
+    await connection.rollback();
+  } finally {
+    if (oldWelcome === undefined) delete process.env.AI_WELCOME_CREDITS; else process.env.AI_WELCOME_CREDITS = oldWelcome;
+    if (oldRate === undefined) delete process.env.AI_DEFAULT_MULTIPLIER; else process.env.AI_DEFAULT_MULTIPLIER = oldRate;
+    await connection.rollback(); connection.release();
+  }
 });

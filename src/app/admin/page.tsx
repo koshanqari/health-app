@@ -1,3 +1,4 @@
+import { creditSettings } from "@/lib/credits";
 import type { DatabaseRow } from "@/lib/db";
 import { getSession, requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -13,9 +14,10 @@ export const metadata = { title: "Administration" };
 export default async function AdminPage() {
   if (!await getSession()) return <AuthShell mode="admin"><AuthForm mode="admin" /></AuthShell>;
   const admin = await requireAdmin();
+  const defaults = creditSettings();
   const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [admin.id]);
   const [rows] = await db.execute<(DatabaseRow & Omit<DirectoryUser, "createdAt"> & { createdAt: Date })[]>(
-    "SELECT u.id, u.name, u.email, u.role, u.\"createdAt\", (COALESCE(w.\"balanceCents\" - w.\"heldCents\",0)::double precision / 100) AS credits, (COALESCE(w.\"multiplierHundred\",200)::double precision / 100) AS multiplier FROM \"user\" u LEFT JOIN \"creditWallet\" w ON w.\"userId\" = u.id ORDER BY u.\"createdAt\" DESC LIMIT 100",
+    "SELECT u.id, u.name, u.email, u.role, u.\"createdAt\", (COALESCE(w.\"balanceCents\" - w.\"heldCents\",0)::double precision / 100) AS credits, (COALESCE(w.\"multiplierHundred\",$1)::double precision / 100) AS multiplier FROM \"user\" u LEFT JOIN \"creditWallet\" w ON w.\"userId\" = u.id ORDER BY u.\"createdAt\" DESC LIMIT 100", [defaults.defaultMultiplierHundred],
   );
   const [counts] = await db.execute<DatabaseRow[]>(
     "SELECT COUNT(*)::integer AS total, SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::integer AS admins, SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END)::integer AS members FROM \"user\"",
@@ -47,6 +49,7 @@ export default async function AdminPage() {
             </div>
           ))}
         </dl>
+        <p className="account-note">New account defaults: {(defaults.welcomeCents / 100).toFixed(2)} credits and {(defaults.defaultMultiplierHundred / 100).toFixed(2)}× multiplier. These are a one-time welcome grant; existing accounts keep their balance and rate.</p>
         <UserDirectory users={users} currentUserId={admin.id} />
         <p className="account-note">Member meal and activity records stay out of this view.</p>
       </main>

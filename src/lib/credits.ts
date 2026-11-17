@@ -26,7 +26,8 @@ function decimal(value: unknown, min: number, max: number, label: string) {
 }
 export function creditSettings() {
   return {
-    welcomeCents: decimal(Number(process.env.AI_WELCOME_CREDITS ?? 20), 0, 1000, "welcome credits"),
+    welcomeCents: decimal(Number(process.env.AI_WELCOME_CREDITS ?? 50), 0, 1000, "welcome credits"),
+    defaultMultiplierHundred: decimal(Number(process.env.AI_DEFAULT_MULTIPLIER ?? 3.33), .1, 10, "default multiplier"),
     fxCents: decimal(Number(process.env.AI_CREDIT_INR_PER_USD ?? 100), 1, 1000, "INR per USD"),
   };
 }
@@ -35,13 +36,14 @@ export function creditCharge(costMicros: number, fxCents: number, multiplierHund
   return Number((BigInt(costMicros) * BigInt(fxCents) * BigInt(multiplierHundred) + 99_999_999n) / 100_000_000n);
 }
 export async function migrateCredits(connection: DatabaseConnection) {
-  const { welcomeCents } = creditSettings();
+  const { welcomeCents, defaultMultiplierHundred } = creditSettings();
   await connection.execute(`CREATE TABLE IF NOT EXISTS "creditWallet" (
     "userId" TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
     "balanceCents" BIGINT NOT NULL DEFAULT 0 CHECK ("balanceCents" BETWEEN 0 AND 1000000000000),
     "heldCents" BIGINT NOT NULL DEFAULT 0 CHECK ("heldCents" >= 0 AND "heldCents" <= "balanceCents"),
-    "multiplierHundred" INTEGER NOT NULL DEFAULT 200 CHECK ("multiplierHundred" BETWEEN 10 AND 1000)
+    "multiplierHundred" INTEGER NOT NULL DEFAULT ${defaultMultiplierHundred} CHECK ("multiplierHundred" BETWEEN 10 AND 1000)
   )`);
+  await connection.execute(`ALTER TABLE "creditWallet" ALTER COLUMN "multiplierHundred" SET DEFAULT ${defaultMultiplierHundred}`);
   for (const sql of [
     'ALTER TABLE "foodAiUsage" ADD COLUMN IF NOT EXISTS "creditReservedCents" INTEGER NOT NULL DEFAULT 0 CHECK ("creditReservedCents" >= 0)',
     'ALTER TABLE "foodAiUsage" ADD COLUMN IF NOT EXISTS "creditHoldActive" BOOLEAN NOT NULL DEFAULT FALSE',
@@ -65,7 +67,7 @@ export async function migrateCredits(connection: DatabaseConnection) {
   await connection.execute('CREATE INDEX IF NOT EXISTS credit_pending_holds ON "foodAiUsage" ("userId", "createdAt") WHERE "creditHoldActive"');
   await connection.execute(`CREATE OR REPLACE FUNCTION daywell_welcome_credits() RETURNS TRIGGER AS $$
     BEGIN
-      INSERT INTO "creditWallet" ("userId", "balanceCents") VALUES (NEW.id, ${welcomeCents}) ON CONFLICT DO NOTHING;
+      INSERT INTO "creditWallet" ("userId", "balanceCents", "multiplierHundred") VALUES (NEW.id, ${welcomeCents}, ${defaultMultiplierHundred}) ON CONFLICT DO NOTHING;
       IF FOUND THEN
         INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason)
         VALUES (gen_random_uuid()::text, NEW.id, 'welcome', ${welcomeCents}, ${welcomeCents}, 'Welcome credits');
@@ -75,7 +77,7 @@ export async function migrateCredits(connection: DatabaseConnection) {
   await connection.execute('DROP TRIGGER IF EXISTS daywell_welcome_credits ON "user"');
   await connection.execute('CREATE TRIGGER daywell_welcome_credits AFTER INSERT ON "user" FOR EACH ROW EXECUTE FUNCTION daywell_welcome_credits()');
   await connection.execute(`WITH fresh AS (
-    INSERT INTO "creditWallet" ("userId", "balanceCents") SELECT id, ${welcomeCents} FROM "user" ON CONFLICT DO NOTHING RETURNING "userId"
+    INSERT INTO "creditWallet" ("userId", "balanceCents", "multiplierHundred") SELECT id, ${welcomeCents}, ${defaultMultiplierHundred} FROM "user" ON CONFLICT DO NOTHING RETURNING "userId"
   ) INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason)
     SELECT gen_random_uuid()::text, "userId", 'welcome', ${welcomeCents}, ${welcomeCents}, 'Welcome credits' FROM fresh`);
 }

@@ -60,7 +60,13 @@ function WalletDialog({ target, onClose, onLoaded, onChanged }: {
       {data && <>
         <p className="credit-total"><strong>{amount(data.available)}</strong><span>credits remaining</span></p>
         <p className="credit-estimate">About <strong>{data.estimatedReplies}</strong> replies remaining</p>
-        {adminData && <><p className="credit-help">An estimate from recent AI usage, or a typical reply for a new account. Photos and longer conversations can use more. Daily and shared AI limits still apply.</p>
+        {adminData && <><p className="credit-help">An estimate from recent AI usage, or a typical reply for a new account. Photos and longer conversations can use more. Shared AI limits still apply.</p>
+        <details className="credit-help"><summary>How multipliers work</summary>
+          <p>Credits charged = provider cost in USD × billing conversion to ₹ × the user’s multiplier, rounded up to 0.01 credit. One credit represents ₹1.</p>
+          <p>To choose a multiplier: credits offered ÷ target replies ÷ average credits per reply at 1×.</p>
+          <p>Example: 20 credits buys about 200 replies at 1×, so the average is 0.10 credit. For 50 credits to cover about 150 replies: 50 ÷ 150 ÷ 0.10 = 3.33×.</p>
+          <p>Higher multipliers use credits faster. Changing a rate affects future replies, not the credit balance or past charges. Reply counts vary with photos and conversation length; they are estimates, not a daily limit or monthly subscription. A small balance must remain available for the next reply’s reservation.</p>
+        </details>
         <dl className="credit-facts"><div><dt>Current rate</dt><dd>{adminData.multiplier.toFixed(2)}×</dd></div><div><dt>Typical reply estimate</dt><dd>{amount(adminData.estimatedReplyCost)} credits</dd></div><div><dt>Maximum per reply</dt><dd>{amount(adminData.maximumReplyCharge)} credits</dd></div>{adminData.held > 0 && <div><dt>Reserved for pending replies</dt><dd>{amount(adminData.held)} credits</dd></div>}</dl>
         <p className="credit-help">1 credit = ₹1. Up to {amount(adminData.maximumReplyCharge)} credits are temporarily reserved when you send. Unused credits return after the reply; failed replies aren’t charged.</p></>}
         {!target && <><button className="primary-button" type="button" onClick={() => setContact(true)}>Add credits</button>{contact && <p className="credit-contact">For more credits, please contact <a href="https://in.linkedin.com/in/koshanqari" target="_blank" rel="noopener noreferrer">Koshan Qari on LinkedIn ↗</a>.</p>}</>}

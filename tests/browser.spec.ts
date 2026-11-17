@@ -968,6 +968,9 @@ test("admin credit controls add an offline top-up, change user pricing and show 
   await page.getByRole("button", { name: `Manage credits: ${memberEmail}`, exact: true }).click();
   const wallet = page.getByRole("dialog", { name: /Credits ·/ });
   await expect(wallet.locator(".credit-total strong")).toBeVisible();
+  await wallet.getByText("How multipliers work", { exact: true }).click();
+  await expect(wallet.getByText(/50 ÷ 150 ÷ 0.10 = 3.33×/)).toBeVisible();
+  await expect(wallet.getByText(/Changing a rate affects future replies/)).toBeVisible();
   const initial = Number((await wallet.locator(".credit-total strong").innerText()).replaceAll(",", ""));
   await wallet.getByLabel("Credits to add", { exact: true }).fill("50");
   await wallet.getByLabel("Money received (₹, optional)", { exact: true }).fill("50");
