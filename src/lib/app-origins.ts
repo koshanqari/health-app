@@ -1,7 +1,9 @@
 import { networkInterfaces } from "node:os";
 
 const vercelHost = process.env.VERCEL ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL : undefined;
-export const appBaseURL = process.env.BETTER_AUTH_URL || (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
+// Preview shares development secrets, whose local auth URL must stay on localhost.
+const previewHost = process.env.VERCEL && process.env.VERCEL_ENV === "preview" ? process.env.VERCEL_URL : undefined;
+export const appBaseURL = previewHost ? `https://${previewHost}` : process.env.BETTER_AUTH_URL || (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
 
 function getDevelopmentOrigins() {
   if ((process.env.NODE_ENV !== "development" && process.env.LAN_PREVIEW !== "true") || process.env.VERCEL) return [];
