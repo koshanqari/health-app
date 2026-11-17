@@ -1,9 +1,11 @@
 import type { FoodSummary } from "./food";
+import { isFoodDate } from "./food";
 
 export const goalNutrients = ["calories", "protein", "carbs", "fat"] as const;
 export type GoalNutrient = typeof goalNutrients[number];
 export type GoalRange = { min: number; max: number };
 export type FoodGoals = Record<GoalNutrient, GoalRange>;
+export type FoodGoalVersion = { effectiveFrom: string; goals: FoodGoals };
 const round = (value: number) => Math.round(value * 100) / 100;
 
 // Editable starting split, not a personalized nutrition prescription.
@@ -30,6 +32,27 @@ export function parseFoodGoals(value: unknown): FoodGoals {
     result[key] = { min: min as number, max: max as number };
   }
   return result;
+}
+
+export function goalVersionForDate(versions: FoodGoalVersion[], date: string): FoodGoalVersion | null {
+  let result: FoodGoalVersion | null = null;
+  for (const version of versions) if (version.effectiveFrom <= date && (!result || version.effectiveFrom > result.effectiveFrom)) result = version;
+  return result;
+}
+
+export function parseFoodGoalChange(value: unknown, now = new Date()) {
+  const goals = parseFoodGoals(value);
+  const data = value as Record<string, unknown>;
+  const timeZone = data.timeZone ?? "UTC";
+  if (typeof timeZone !== "string" || timeZone.length > 64) throw new Error("Choose a valid time zone.");
+  let parts: Intl.DateTimeFormatPart[];
+  try { parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now); }
+  catch { throw new Error("Choose a valid time zone."); }
+  const part = (type: string) => parts.find(item => item.type === type)!.value;
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  const effectiveFrom = data.effectiveFrom === undefined ? today : data.effectiveFrom;
+  if (!isFoodDate(effectiveFrom)) throw new Error("Choose a valid effective date between 2000 and 2100.");
+  return { goals, effectiveFrom, today };
 }
 
 export function foodGoalProgress(consumed: number, range: GoalRange) {

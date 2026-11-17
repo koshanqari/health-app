@@ -1,10 +1,10 @@
 import { nextFoodDate, type FoodSummary } from "./food";
-import type { FoodGoals, GoalNutrient } from "./food-goals";
+import type { FoodGoals, FoodGoalVersion, GoalNutrient } from "./food-goals";
 
 export const historyPeriods = ["W", "M", "6M", "Y"] as const;
 export type HistoryPeriod = typeof historyPeriods[number];
 export type FoodHistoryDay = Pick<FoodSummary, GoalNutrient | "entries"> & { date: string };
-export type FoodHistoryData = { start: string; end: string; days: FoodHistoryDay[]; goals: FoodGoals | null };
+export type FoodHistoryData = { start: string; end: string; days: FoodHistoryDay[]; goals: FoodGoals | null; goalVersions: FoodGoalVersion[] };
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 
 export function foodHistoryWindow(period: HistoryPeriod, anchor: string) {

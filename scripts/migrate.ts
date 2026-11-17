@@ -17,6 +17,20 @@ try {
       )
     `);
     await connection.execute(`
+      CREATE TABLE IF NOT EXISTS "foodGoalVersion" (
+        "userId" TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        "effectiveFrom" DATE NOT NULL CHECK ("effectiveFrom" BETWEEN DATE '2000-01-01' AND DATE '2100-12-31'),
+        targets JSONB NOT NULL CHECK (jsonb_typeof(targets) = 'object'),
+        "updatedAt" TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+        PRIMARY KEY ("userId", "effectiveFrom")
+      )
+    `);
+    // Earlier versions were never recorded. Preserve only the latest known save date (UTC).
+    await connection.execute(`INSERT INTO "foodGoalVersion" ("userId", "effectiveFrom", targets, "updatedAt")
+      SELECT g."userId", g."updatedAt"::date, g.targets, g."updatedAt" FROM "foodGoal" g
+      WHERE NOT EXISTS (SELECT 1 FROM "foodGoalVersion" v WHERE v."userId" = g."userId")
+      ON CONFLICT ("userId", "effectiveFrom") DO NOTHING`);
+    await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodAiBudget" (
         scope VARCHAR(64) NOT NULL, month CHAR(7) NOT NULL,
         "usedMicros" BIGINT NOT NULL DEFAULT 0 CHECK ("usedMicros" >= 0),

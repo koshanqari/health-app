@@ -205,11 +205,9 @@ export function FoodJournal({ active = true }: { active?: boolean }) {
 
   return <div className="food-journal">
     <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
-    {data && <FoodGoalPanel key={date} goals={data.goals ?? null} day={data.day} date={date} onSaved={goals => {
-      for (const cached of journalCache.current.values()) cached.value = { ...cached.value, goals };
-      setData(current => current ? { ...current, goals } : current);
-      setNotice("Daily goals saved.");
-      setRevision(value => value + 1);
+    {data && <FoodGoalPanel key={date} goals={data.goals ?? null} effectiveFrom={data.goalEffectiveFrom ?? null} day={data.day} date={date} onSaved={effectiveFrom => {
+      setNotice(`Goals saved from ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(effectiveFrom + "T12:00"))}.`);
+      refreshJournal();
     }} />}
     {!data && loading && <div className="goal-loading" role="status">Loading your daily goals…</div>}
     {date && <FoodHistory active={active} date={date} revision={revision} onSelectDate={changeDate} />}

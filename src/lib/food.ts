@@ -37,6 +37,7 @@ export type FoodSummary = {
 export type FoodJournalData = {
   entries: FoodEntry[]; day: FoodSummary; month: FoodSummary;
   goals: import("./food-goals").FoodGoals | null;
+  goalEffectiveFrom: string | null;
 };
 export const emptySummary = (): FoodSummary => ({
   entries: 0, calories: 0, protein: 0, carbs: 0, fat: 0, unhealthyEntries: 0, unhealthyCalories: 0,

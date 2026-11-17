@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { isFoodDate, localDateTime } from "@/lib/food";
-import { goalNutrients, type GoalNutrient } from "@/lib/food-goals";
+import { goalNutrients, goalVersionForDate, type GoalNutrient } from "@/lib/food-goals";
 import { foodHistoryWindow, historyDayStatus, historyPeriods, shiftHistoryAnchor, type FoodHistoryData, type HistoryPeriod } from "@/lib/food-history";
 
 const labels = { calories: "Calories", protein: "Protein", carbs: "Carbs", fat: "Fat" };
@@ -25,6 +25,7 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
   const range = foodHistoryWindow(period, anchor);
   const key = `${period}:${range.start}:${range.end}`;
   const visible = data?.start === range.start && data.end === range.end ? data : null;
+  const versionsByDay = useMemo(() => new Map(visible?.days.map(day => [day.date, goalVersionForDate(visible.goalVersions ?? [], day.date)])), [visible]);
 
   // A bar selection keeps its window; the meal date picker can navigate elsewhere.
   useEffect(() => {
@@ -102,14 +103,20 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
   const selectedDay = visible?.days.find(day => day.date === selected);
   const loggedDays = visible?.days.filter(day => day.entries && day.date <= today) ?? [];
   const total = selectedDay ? selectedDay[nutrient] : loggedDays.length ? loggedDays.reduce((sum, day) => sum + day[nutrient], 0) / loggedDays.length : 0;
-  const achieved = loggedDays.filter(day => historyDayStatus(day, visible!.goals, nutrient, today) === "achieved").length;
-  const goal = visible?.goals?.[nutrient];
-  const rawMax = Math.max(1, goal?.max ?? 0, ...(visible?.days.map(day => day[nutrient]) ?? [0]));
+  const achieved = loggedDays.filter(day => historyDayStatus(day, versionsByDay.get(day.date)?.goals ?? null, nutrient, today) === "achieved").length;
+  const selectedVersion = selectedDay ? versionsByDay.get(selectedDay.date) : null;
+  const datedDays = visible?.days.filter(day => day.date <= today) ?? [];
+  const appliedDates = new Set(datedDays.map(day => versionsByDay.get(day.date)?.effectiveFrom ?? null));
+  const firstVersion = datedDays.map(day => versionsByDay.get(day.date)).find(Boolean);
+  const goal = selectedDay ? selectedVersion?.goals[nutrient] : appliedDates.size === 1 ? firstVersion?.goals[nutrient] : null;
+  const hasGoals = !!firstVersion;
+  const noGoalDays = loggedDays.filter(day => !versionsByDay.get(day.date)).length;
+  const rawMax = Math.max(1, ...(visible?.days.map(day => Math.max(day[nutrient], versionsByDay.get(day.date)?.goals[nutrient].max ?? 0)) ?? [0]));
   const step = Math.pow(10, Math.floor(Math.log10(rawMax))) / 2;
   const maximum = Math.ceil(rawMax * 1.1 / step) * step;
   const selectedIndex = visible?.days.findIndex(day => day.date === selected) ?? -1;
   const unit = nutrient === "calories" ? "kcal" : "g";
-  const selectedStatus = selectedDay && visible?.goals ? historyDayStatus(selectedDay, visible.goals, nutrient, today) : null;
+  const selectedStatus = selectedDay ? historyDayStatus(selectedDay, selectedVersion?.goals ?? null, nutrient, today) : null;
   const ticks = visible?.days.map((day, index) => ({ day, index })).filter(({ day, index }) => period === "W" || period === "M" ? period === "W" || index === 0 || (index + 1) % 7 === 0 : day.date.endsWith("-01") && (period !== "Y" || Number(day.date.slice(5, 7)) % 2 === 1)) ?? [];
 
   return <section className="food-history" aria-label="Food goal history">
@@ -134,18 +141,21 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
     {visible && <>
       <div className="history-inspection" aria-live="polite" aria-atomic="true">
         <div><p className="history-caption">{selectedDay ? "Total" : "Daily average"}</p><p className="history-value"><strong>{format(total)}</strong><span>{unit}</span></p>
-        <p className="history-detail">{selectedDay ? `${dateLabel(selectedDay.date)}${selectedDay.date === today ? " · so far" : ""}${!selectedDay.entries ? " · No food logged" : selectedStatus === "achieved" ? " · In goal range" : selectedStatus === "outside" ? " · Outside goal range" : ""}` : `Across ${loggedDays.length} logged ${loggedDays.length === 1 ? "day" : "days"}`}</p></div>
+        <p className="history-detail">{selectedDay ? `${dateLabel(selectedDay.date)}${selectedDay.date === today ? " · so far" : ""}${!selectedDay.entries ? " · No food logged" : selectedStatus === "achieved" ? " · In goal range" : selectedStatus === "outside" ? " · Outside goal range" : selectedStatus === "no-goal" ? " · No goal set" : ""}` : `Across ${loggedDays.length} logged ${loggedDays.length === 1 ? "day" : "days"}`}</p></div>
         {selectedDay && <button className="text-button" onClick={() => setSelected(null)}>Show average</button>}
       </div>
       {selectedDay && <p className="history-day-macros">{goalNutrients.filter(key => key !== nutrient).map(key => <span key={key}>{labels[key]} {format(selectedDay[key])} {key === "calories" ? "kcal" : "g"}</span>)}</p>}
       <div className="history-graph">
         <div ref={plot} className="history-canvas" role="group" tabIndex={0} aria-label="Daily nutrition chart. Use arrow keys to select a day." onKeyDown={keyboard} onPointerDown={event => { pointer.current = { x: event.clientX, y: event.clientY }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={release} onPointerCancel={() => { pointer.current = null; }}>
           <svg viewBox="0 0 1000 240" preserveAspectRatio="none" aria-hidden="true">
-            {goal && <rect x="0" y={240 - Math.min(goal.max / maximum, 1) * 240} width="1000" height={(goal.max - goal.min) / maximum * 240} className="history-goal-band" />}
+            {visible.days.map((day, index) => {
+              const target = versionsByDay.get(day.date)?.goals[nutrient];
+              return target && day.date <= today && <rect key={day.date} x={index / visible.days.length * 1000} y={240 - target.max / maximum * 240} width={1000 / visible.days.length} height={(target.max - target.min) / maximum * 240} className="history-goal-band" />;
+            })}
             {[0, 1, 2, 3].map(tick => <line key={tick} x1="0" x2="1000" y1={tick * 80} y2={tick * 80} className="history-gridline" vectorEffect="non-scaling-stroke" />)}
             {visible.days.map((day, index) => {
               const cell = 1000 / visible.days.length, width = cell * (period === "W" ? .55 : .7), height = Math.max(day.entries && day.date <= today ? 2 : 0, day.date <= today ? day[nutrient] / maximum * 240 : 0);
-              const status = historyDayStatus(day, visible.goals, nutrient, today);
+              const status = historyDayStatus(day, versionsByDay.get(day.date)?.goals ?? null, nutrient, today);
               return <rect key={day.date} x={index * cell + (cell - width) / 2} y={240 - Math.max(height, 1)} width={width} height={Math.max(height, 1)} rx={Math.min(width / 4, 5)} className={`history-bar history-${status}`} data-date={day.date} data-status={status} />;
             })}
             {selectedIndex >= 0 && <line x1={(selectedIndex + .5) / visible.days.length * 1000} x2={(selectedIndex + .5) / visible.days.length * 1000} y1="0" y2="240" className="history-selection" vectorEffect="non-scaling-stroke" />}
@@ -154,9 +164,10 @@ export function FoodHistory({ active, date, revision, onSelectDate }: { active: 
         <div className="history-y-axis" aria-hidden="true">{[maximum, maximum * 2 / 3, maximum / 3, 0].map((value, index) => <span key={index}>{new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)}</span>)}</div>
         <div className="history-x-axis" aria-hidden="true">{ticks.map(({ day, index }) => <span key={day.date} style={{ left: `${(index + .5) / visible.days.length * 100}%` }}>{dateLabel(day.date, period === "W" ? { weekday: "short" } : period === "M" ? { day: "numeric" } : { month: "short" })}</span>)}</div>
       </div>
-      <div className="history-legend"><span><i className="history-achieved-dot" />In goal range</span><span><i className="history-outside-dot" />Other logged days</span></div>
-      <p className="history-achievement">{goal ? <><strong>{achieved}</strong> {achieved === 1 ? "day" : "days"} in your {nutrient === "calories" ? "calorie" : labels[nutrient].toLowerCase()} range · {format(goal.min)}–{format(goal.max)} {unit}</> : "Set your food goals above to highlight days in range."}</p>
-      <p className="history-footnote">{goal ? "Compared with your current goals. " : ""}Tap a day for totals. Swipe to change period.</p>
+      <div className="history-legend"><span><i className="history-achieved-dot" />In goal range</span><span><i className="history-outside-dot" />Other logged days</span>{noGoalDays > 0 && <span><i className="history-no-goal-dot" />No goal set</span>}</div>
+      <p className="history-achievement">{hasGoals ? <><strong>{achieved}</strong> {achieved === 1 ? "day" : "days"} in your {nutrient === "calories" ? "calorie" : labels[nutrient].toLowerCase()} range{goal ? ` · ${format(goal.min)}–${format(goal.max)} ${unit}` : " · Goals vary by date"}</> : "No goal set for this period. Add a dated goal above."}</p>
+      {selectedDay && !selectedVersion && <p className="history-footnote">No goal set for this date; this day is not counted as achieved or missed.</p>}
+      <p className="history-footnote">Uses the goal that applied on each day. Tap a day for totals. Swipe to change period.</p>
     </>}
   </section>;
 }

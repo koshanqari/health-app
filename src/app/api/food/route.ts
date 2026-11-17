@@ -27,7 +27,7 @@ export async function GET(request: Request) {
         "SELECT to_char(\"eatenAtLocal\", 'YYYY-MM-DD') AS date, COUNT(*)::integer AS entries, SUM(calories) AS calories, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat, SUM(CASE WHEN category = 'unhealthy' THEN 1 ELSE 0 END)::integer AS \"unhealthyEntries\", SUM(CASE WHEN category = 'unhealthy' THEN calories ELSE 0 END) AS \"unhealthyCalories\" FROM \"foodEntry\" WHERE \"userId\" = $1 AND \"eatenAtLocal\" >= $2 AND \"eatenAtLocal\" < $3 GROUP BY to_char(\"eatenAtLocal\", 'YYYY-MM-DD')",
         [session.user.id, monthStart, nextMonth.toISOString().slice(0, 10)],
       ),
-      db.execute<DatabaseRow[]>('SELECT targets FROM "foodGoal" WHERE "userId" = $1', [session.user.id]),
+      db.execute<DatabaseRow[]>('SELECT targets, to_char("effectiveFrom", \'YYYY-MM-DD\') AS "effectiveFrom" FROM "foodGoalVersion" WHERE "userId" = $1 AND "effectiveFrom" <= $2::date ORDER BY "effectiveFrom" DESC LIMIT 1', [session.user.id, date]),
     ]);
     const day = emptySummary(), month = emptySummary();
     for (const row of totalsResult[0]) {
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const entries = entriesResult[0].map(row => ({
       ...row, calories: Number(row.calories), protein: Number(row.protein), carbs: Number(row.carbs), fat: Number(row.fat),
     })) as FoodEntry[];
-    return response({ entries, day, month, goals: goalsResult[0][0]?.targets ?? null });
+    return response({ entries, day, month, goals: goalsResult[0][0]?.targets ?? null, goalEffectiveFrom: goalsResult[0][0]?.effectiveFrom ?? null });
   } catch { return unavailable(); }
 }
 

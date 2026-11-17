@@ -327,6 +327,8 @@ h1, h2, h3 { line-height: 1.2; }
 .goal-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .goal-panel-heading h2 { font-size: 18px; font-weight: 800; }
 .goal-panel-heading .text-button { flex-shrink: 0; font-size: 13px; }
+.goal-nutrient-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.goal-effective-date { margin: 0; color: var(--muted); font-size: 11px; }
 .goal-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .goal-calories { grid-column: 1 / -1; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
 .goal-nutrient { min-width: 0; }
@@ -496,6 +498,7 @@ h1, h2, h3 { line-height: 1.2; }
 .history-goal-band { fill: #e6f4ea; }
 .history-bar { fill: #a8dab5; }
 .history-bar.history-achieved { fill: #147c36; }
+.history-bar.history-no-goal { fill: #c5cec1; }
 .history-bar.history-unlogged, .history-bar.history-future { fill: #dfe6dc; }
 .history-selection { stroke: #30343b; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
 .history-y-axis { position: absolute; right: 0; top: -7px; height: 254px; display: flex; flex-direction: column; justify-content: space-between; color: var(--muted); font-size: 10px; text-align: right; }
@@ -506,6 +509,7 @@ h1, h2, h3 { line-height: 1.2; }
 .history-legend i { width: 9px; height: 9px; border-radius: 3px; }
 .history-achieved-dot { background: #147c36; }
 .history-outside-dot { background: #a8dab5; }
+.history-no-goal-dot { background: #c5cec1; }
 .history-achievement { margin-top: 14px; color: var(--ink); font-size: 13px; }
 .history-achievement strong { color: var(--accent-text); }
 .history-footnote { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.6; }

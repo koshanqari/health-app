@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { db, type DatabaseRow } from "../src/lib/db";
 import { macroCalorieEstimate } from "../src/lib/food";
-import { foodGoalProgress, goalMacroValues, parseFoodGoals, suggestedFoodGoals } from "../src/lib/food-goals";
+import { foodGoalProgress, goalMacroValues, goalVersionForDate, parseFoodGoalChange, parseFoodGoals, suggestedFoodGoals } from "../src/lib/food-goals";
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
 const emails = [0, 1].map(index => `goals-${randomUUID()}-${index}@example.com`);
@@ -81,4 +81,62 @@ test("updating goals preserves meals and calorie/macro mismatch warnings stay no
   assert.equal(saved.day.calories, 400);
   assert.deepEqual(saved.goals, mismatched);
   assert.equal(saved.day.entries, 1);
+});
+
+test("effective dates default to the user's local today and reject invalid dates or zones", () => {
+  const now = new Date("2026-01-01T20:00:00Z");
+  assert.equal(parseFoodGoalChange({ ...goals, timeZone: "Asia/Kolkata" }, now).effectiveFrom, "2026-01-02");
+  assert.equal(parseFoodGoalChange(goals, now).effectiveFrom, "2026-01-01");
+  for (const effectiveFrom of [null, "", "2020-02-30", "1999-12-31", "2101-01-01", 20260101]) assert.throws(() => parseFoodGoalChange({ ...goals, effectiveFrom }, now));
+  assert.throws(() => parseFoodGoalChange({ ...goals, timeZone: "Not/AZone" }, now));
+  const bulk = suggestedFoodGoals(2700, 3000);
+  const versions = [{ effectiveFrom: "2020-07-01", goals: bulk }, { effectiveFrom: "2020-01-01", goals }];
+  assert.equal(goalVersionForDate(versions, "2019-12-31"), null);
+  assert.deepEqual(goalVersionForDate(versions, "2020-06-30")?.goals, goals);
+  assert.deepEqual(goalVersionForDate(versions, "2020-07-01")?.goals, bulk);
+});
+
+const journalAt = async (date: string) => {
+  const response = await fetch(base + "/api/food?date=" + date, { headers: { Cookie: cookies[0] } });
+  assert.equal(response.status, 200);
+  return response.json();
+};
+
+test("dated targets preserve earlier goals and use the new ranges from their exact start date", async () => {
+  const bulk = suggestedFoodGoals(2700, 3000);
+  assert.equal((await put({ ...bulk, effectiveFrom: "2020-07-01" })).status, 200);
+  assert.equal((await put({ ...goals, effectiveFrom: "2020-01-01" })).status, 200);
+  assert.equal((await journalAt("2019-12-31")).goals, null);
+  assert.deepEqual((await journalAt("2020-06-30")).goals, goals);
+  const july = await journalAt("2020-07-01");
+  assert.deepEqual(july.goals, bulk);
+  assert.equal(july.goalEffectiveFrom, "2020-07-01");
+  assert.deepEqual((await journalAt("2020-12-31")).goals, bulk);
+});
+
+test("backdated insertion and same-start-date corrections preserve adjacent goal versions", async () => {
+  const middle = suggestedFoodGoals(2300, 2600), corrected = suggestedFoodGoals(2800, 3100);
+  assert.equal((await put({ ...middle, effectiveFrom: "2020-05-01" })).status, 200);
+  assert.deepEqual((await journalAt("2020-04-30")).goals, goals);
+  assert.deepEqual((await journalAt("2020-05-01")).goals, middle);
+  assert.deepEqual((await journalAt("2020-07-01")).goals, suggestedFoodGoals(2700, 3000));
+  assert.equal((await put({ ...corrected, effectiveFrom: "2020-07-01" })).status, 200);
+  assert.deepEqual((await journalAt("2020-06-30")).goals, middle);
+  assert.deepEqual((await journalAt("2020-07-01")).goals, corrected);
+  assert.equal((await put({ ...goals, effectiveFrom: "2020-02-30" })).status, 400);
+  const [rows] = await db.execute<DatabaseRow[]>('SELECT COUNT(*)::integer AS count FROM "foodGoalVersion" WHERE "userId" = (SELECT id FROM "user" WHERE email = $1) AND "effectiveFrom" = $2::date', [emails[0], "2020-07-01"]);
+  assert.equal(rows[0].count, 1);
+});
+
+test("future and concurrent goal changes retain all versions without changing today's target", async () => {
+  const before = await journal();
+  const future = suggestedFoodGoals(3000, 3300);
+  assert.equal((await put({ ...future, effectiveFrom: "2099-01-01" })).status, 200);
+  assert.deepEqual((await journal()).goals, before.goals);
+  assert.deepEqual((await journalAt("2099-01-01")).goals, future);
+  const august = suggestedFoodGoals(2600, 2800), september = suggestedFoodGoals(2700, 2900);
+  const results = await Promise.all([put({ ...august, effectiveFrom: "2020-08-01" }), put({ ...september, effectiveFrom: "2020-09-01" })]);
+  assert.ok(results.every(response => response.status === 200));
+  assert.deepEqual((await journalAt("2020-08-15")).goals, august);
+  assert.deepEqual((await journalAt("2020-09-15")).goals, september);
 });

@@ -301,7 +301,7 @@ test("food history selects daily totals, colors achieved goals, swipes, and swit
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
   const created: string[] = [];
   try {
-    const goal = await page.request.put("/api/food/goals", { headers: { Origin: baseURL }, data: suggestedFoodGoals() });
+    const goal = await page.request.put("/api/food/goals", { headers: { Origin: baseURL }, data: { ...suggestedFoodGoals(), effectiveFrom: "2020-01-01" } });
     expect(goal.status()).toBe(200);
     for (const [date, calories] of [["2020-01-20", 2300], ["2020-01-21", 1800], ["2020-01-22", 2600], ["2020-01-23", 2400]] as const) {
       const response = await page.request.post("/api/food", { headers: { Origin: baseURL }, data: { name: "History test meal", calories, ...suggestedMacros(calories), eatenAtLocal: date + "T12:00", timeZone: "Asia/Kolkata" } });
@@ -376,6 +376,58 @@ test("food history selects daily totals, colors achieved goals, swipes, and swit
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("food-chat-saved", { detail: "2020-01-20" })));
     await expect(history.locator('.history-bar[data-date="2020-01-20"]')).toHaveAttribute("data-status", "unlogged");
     await expect(history.locator(".history-achievement")).toContainText("1 day");
+  } finally {
+    for (const id of created) await page.request.delete("/api/food", { headers: { Origin: baseURL }, data: { id } });
+  }
+});
+
+test("dated food goals preserve past targets and color history using the goal for each day", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
+  const created: string[] = [];
+  try {
+    const baseline = await page.request.put("/api/food/goals", { headers: { Origin: baseURL }, data: { ...suggestedFoodGoals(), effectiveFrom: "2020-01-01" } });
+    expect(baseline.status()).toBe(200);
+    for (const [date, calories] of [["2019-12-31", 2300], ["2021-03-20", 2300], ["2021-10-20", 2800]] as const) {
+      const result = await page.request.post("/api/food", { headers: { Origin: baseURL }, data: { calories, ...suggestedMacros(calories), eatenAtLocal: date + "T12:00", timeZone: "Asia/Kolkata" } });
+      expect(result.status()).toBe(201); created.push((await result.json()).id);
+    }
+    await page.getByLabel("Journal date", { exact: true }).fill("2021-03-20");
+    const panel = page.getByRole("region", { name: "Daily food goals" });
+    await panel.getByRole("button", { name: "Edit goals", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Daily food goals" });
+    const today = await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+    await expect(dialog.getByLabel("Apply from", { exact: true })).toHaveValue(today);
+    await dialog.getByLabel("Apply from", { exact: true }).fill("2021-01-01");
+    await dialog.getByRole("button", { name: "Save goals", exact: true }).click();
+    await expect(panel.locator(".goal-effective-date")).toHaveText("Applies from 1 Jan 2021");
+    await panel.getByRole("button", { name: "Edit goals", exact: true }).click();
+    await expect(dialog.getByLabel("Apply from", { exact: true })).toHaveValue(today);
+    await dialog.getByLabel("Minimum calories (kcal)", { exact: true }).fill("2700");
+    await dialog.getByLabel("Maximum calories (kcal)", { exact: true }).fill("3000");
+    await dialog.getByLabel("Apply from", { exact: true }).fill("2021-07-01");
+    await dialog.getByRole("button", { name: "Save goals", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuemax", "2500");
+    const history = page.getByRole("region", { name: "Food goal history" });
+    await history.getByRole("group", { name: "History period" }).getByRole("button", { name: "Y", exact: true }).click();
+    await expect(history.locator('.history-bar[data-date="2021-03-20"]')).toHaveAttribute("data-status", "achieved");
+    await expect(history.locator('.history-bar[data-date="2021-10-20"]')).toHaveAttribute("data-status", "achieved");
+    await history.getByLabel("Choose history date", { exact: true }).fill("2021-10-20");
+    await expect(panel.getByRole("progressbar", { name: "Calories goal", exact: true })).toHaveAttribute("aria-valuemax", "3000");
+    await expect(panel.locator(".goal-effective-date")).toHaveText("Applies from 1 Jul 2021");
+    const edit = await page.request.patch("/api/food", { headers: { Origin: baseURL }, data: { id: created[2], calories: 2600 } });
+    expect(edit.status()).toBe(200);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("food-chat-saved", { detail: "2021-10-20" })));
+    await expect(history.locator('.history-bar[data-date="2021-10-20"]')).toHaveAttribute("data-status", "outside");
+    await expect(history.locator('.history-bar[data-date="2021-03-20"]')).toHaveAttribute("data-status", "achieved");
+    await history.getByLabel("Choose history date", { exact: true }).fill("2019-12-31");
+    await expect(panel).toContainText("No goal set for this date.");
+    await expect(history.locator('.history-bar[data-date="2019-12-31"]')).toHaveAttribute("data-status", "no-goal");
+    await expect(history.locator(".history-detail")).toContainText("No goal set");
   } finally {
     for (const id of created) await page.request.delete("/api/food", { headers: { Origin: baseURL }, data: { id } });
   }
