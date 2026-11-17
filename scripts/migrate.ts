@@ -17,6 +17,8 @@ try {
         "updatedAt" TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
       )
     `);
+    await connection.execute(`ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "avatarId" TEXT
+      CHECK ("avatarId" IN ('apple', 'sprout', 'cat', 'bear', 'bunny', 'panda'))`);
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodGoal" (
         "userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,

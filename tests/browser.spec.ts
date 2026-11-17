@@ -127,7 +127,9 @@ test("signup validates confirmation, creates a user, persists login, and signs o
   const navigationBox = await navigation.boundingBox();
   expect(accountBox!.y + accountBox!.height).toBeLessThanOrEqual(navigationBox!.y);
 
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.locator(".app-header").getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  await page.getByRole("dialog", { name: "Profile", exact: true }).getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login$/);
@@ -161,7 +163,8 @@ test("administrator sees real accounts and can search and filter the directory",
   await expect(page.getByText("No accounts match this search.")).toBeVisible();
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin.png`, fullPage: true });
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("link", { name: "Open profile", exact: true }).click();
+  await page.getByRole("dialog", { name: "Profile", exact: true }).getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
 
@@ -759,4 +762,52 @@ test("administrator avatar opens the private profile and returns to administrati
   await profile.getByRole("button", { name: "Back to app", exact: true }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Hello, Browser.", exact: true })).toBeVisible();
+});
+
+test("preset avatars preview, persist across reloads, reset to initials, and sign out from Profile", async ({ page }, info) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(memberEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const header = page.locator(".app-header"), portrait = header.locator(".avatar [data-avatar-id]");
+  await expect(header.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await header.getByRole("button", { name: "Open profile", exact: true }).click();
+  const profile = page.getByRole("dialog", { name: "Profile", exact: true });
+  await expect(profile.getByRole("radio")).toHaveCount(6);
+  const initial = await portrait.getAttribute("data-avatar-id");
+  for (const [label, id] of [["Apple", "apple"], ["Sprout", "sprout"], ["Cat", "cat"], ["Bear", "bear"], ["Bunny", "bunny"], ["Panda", "panda"]]) {
+    await profile.getByRole("radio", { name: label, exact: true }).check();
+    await expect(profile.locator(".profile-avatar-preview [data-avatar-id]")).toHaveAttribute("data-avatar-id", id);
+    await expect(portrait).toHaveAttribute("data-avatar-id", initial!);
+  }
+  await profile.getByRole("radio", { name: "Bunny", exact: true }).check();
+  await profile.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(profile.getByRole("status")).toHaveText("Profile saved.");
+  await expect(portrait).toHaveAttribute("data-avatar-id", "bunny");
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(profile).not.toBeVisible();
+  await page.reload();
+  await expect(portrait).toHaveAttribute("data-avatar-id", "bunny");
+  await header.getByRole("button", { name: "Open profile", exact: true }).click();
+  await expect(profile.getByRole("radio", { name: "Bunny", exact: true })).toBeChecked();
+  await profile.getByRole("radio", { name: "Panda", exact: true }).check();
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(profile).not.toBeVisible();
+  await expect(portrait).toHaveAttribute("data-avatar-id", "bunny");
+  await header.getByRole("button", { name: "Open profile", exact: true }).click();
+  await expect(profile.getByRole("radio", { name: "Bunny", exact: true })).toBeChecked();
+  await profile.getByRole("button", { name: "Use initials", exact: true }).click();
+  await profile.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(portrait).toHaveAttribute("data-avatar-id", "initials");
+  await profile.getByRole("radio", { name: "Apple", exact: true }).check();
+  await profile.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(profile.getByRole("status")).toHaveText("Profile saved.");
+  await expect(portrait).toHaveAttribute("data-avatar-id", "apple");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-profile-avatars.png` });
+  await profile.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/app");
+  await expect(page).toHaveURL(/\/login$/);
 });

@@ -6,19 +6,21 @@ import { FoodChat } from "./food-chat";
 import { FoodJournal } from "./food-journal";
 import { Profile } from "./profile";
 import { useRouter } from "next/navigation";
+import type { ProfileAvatarId } from "@/lib/profile";
 
 const readTab = (search: string): AppTab => {
   const value = new URLSearchParams(search).get("tab");
   return value === "chat" || value === "food" || value === "activity" || value === "progress" ? value : "home";
 };
 
-export function MemberTabs({ name, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress }: {
-  name: string; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
+export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress }: {
+  name: string; initialAvatarId?: ProfileAvatarId | null; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
   home: ReactNode; activity: ReactNode; progress: ReactNode;
 }) {
   const [tab, setTab] = useState(initialTab);
   const [profileOpen, setProfileOpen] = useState(initialProfileOpen);
   const [displayName, setDisplayName] = useState(name);
+  const [avatarId, setAvatarId] = useState(initialAvatarId);
   const router = useRouter();
   const current = useRef(initialTab);
   const scrollPositions = useRef<Partial<Record<AppTab, number>>>({});
@@ -37,6 +39,7 @@ export function MemberTabs({ name, isAdmin, initialTab, initialProfileOpen = fal
     return () => window.removeEventListener("popstate", restoreTab);
   }, []);
   useEffect(() => { setDisplayName(name); }, [name]);
+  useEffect(() => { setAvatarId(initialAvatarId); }, [initialAvatarId]);
 
   function openProfile() {
     const url = new URL(window.location.href);
@@ -73,7 +76,7 @@ export function MemberTabs({ name, isAdmin, initialTab, initialProfileOpen = fal
   }
 
   return <div onClickCapture={navigate}>
-    <AppShell name={displayName} isAdmin={isAdmin} activeTab={tab} onOpenProfile={openProfile}>
+    <AppShell name={displayName} avatarId={avatarId} isAdmin={isAdmin} activeTab={tab} onOpenProfile={openProfile}>
       <main id="main-content" className={tab === "chat" ? "workspace-main member-main ai-main" : "workspace-main member-main"}>
         {notice}
         <div hidden={tab !== "home"}>{home}</div>
@@ -83,6 +86,6 @@ export function MemberTabs({ name, isAdmin, initialTab, initialProfileOpen = fal
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>
     </AppShell>
-    {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); router.refresh(); }} />}
+    {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); setAvatarId(user.avatarId); router.refresh(); }} />}
   </div>;
 }

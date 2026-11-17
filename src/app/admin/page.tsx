@@ -3,12 +3,14 @@ import { requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { AppShell } from "@/components/app-header";
 import { UserDirectory, type DirectoryUser } from "@/components/user-directory";
+import type { ProfileAvatarId } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Administration" };
 
 export default async function AdminPage() {
   const admin = await requireAdmin();
+  const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [admin.id]);
   const [rows] = await db.execute<(DatabaseRow & Omit<DirectoryUser, "createdAt"> & { createdAt: Date })[]>(
     "SELECT id, name, email, role, \"createdAt\" FROM \"user\" ORDER BY \"createdAt\" DESC LIMIT 100",
   );
@@ -29,7 +31,7 @@ export default async function AdminPage() {
   ];
 
   return (
-    <AppShell name={admin.name} isAdmin area="admin">
+    <AppShell name={admin.name} avatarId={(profileRows[0]?.avatarId ?? null) as ProfileAvatarId | null} isAdmin area="admin">
       <main id="main-content" className="workspace-main admin-main">
         <p className="eyebrow">The people behind Daywell</p>
         <h1>Hello, {admin.name.trim().split(/\s+/)[0]}.</h1>

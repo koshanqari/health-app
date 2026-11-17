@@ -6,7 +6,7 @@ import { parseProfile, type UserProfile } from "@/lib/profile";
 export const runtime = "nodejs";
 const response = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const unavailable = () => response({ message: "We couldn’t reach your profile. Please try again." }, 503);
-const selectProfile = `SELECT u.id, u.name, u.email, u.role, to_char(p."dateOfBirth", 'YYYY-MM-DD') AS "dateOfBirth", p.sex
+const selectProfile = `SELECT u.id, u.name, u.email, u.role, to_char(p."dateOfBirth", 'YYYY-MM-DD') AS "dateOfBirth", p.sex, p."avatarId"
   FROM "user" u LEFT JOIN "userProfile" p ON p."userId" = u.id WHERE u.id = $1`;
 
 export async function GET() {
@@ -40,7 +40,7 @@ export async function PATCH(request: Request) {
       try { profile = parseProfile(data, rows[0] as UserProfile); }
       catch (error) { await connection.rollback(); return response({ message: error instanceof Error ? error.message : "Check your profile details." }, 400); }
       await connection.execute('UPDATE "user" SET name = $1, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\') WHERE id = $2', [profile.name, session.user.id]);
-      await connection.execute('INSERT INTO "userProfile" ("userId", "dateOfBirth", sex) VALUES ($1, $2::date, $3) ON CONFLICT ("userId") DO UPDATE SET "dateOfBirth" = EXCLUDED."dateOfBirth", sex = EXCLUDED.sex, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')', [session.user.id, profile.dateOfBirth, profile.sex]);
+      await connection.execute('INSERT INTO "userProfile" ("userId", "dateOfBirth", sex, "avatarId") VALUES ($1, $2::date, $3, $4) ON CONFLICT ("userId") DO UPDATE SET "dateOfBirth" = EXCLUDED."dateOfBirth", sex = EXCLUDED.sex, "avatarId" = EXCLUDED."avatarId", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')', [session.user.id, profile.dateOfBirth, profile.sex, profile.avatarId]);
       await connection.commit();
       return response({ user: { ...rows[0], ...profile } });
     } catch (error) { await connection.rollback(); throw error; }

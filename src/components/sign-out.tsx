@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
-export function SignOut() {
+export function SignOut({ disabled = false }: { disabled?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  return <div className="signout-wrap"><button className="text-button" disabled={busy} onClick={async () => {
+  return <div className="signout-wrap"><button type="button" className="text-button" disabled={busy || disabled} onClick={async () => {
     setBusy(true); setFailed(false);
     try {
       const result = await authClient.signOut();

@@ -2,7 +2,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { db, type DatabaseRow } from "../src/lib/db";
-import { parseProfile } from "../src/lib/profile";
+import { parseProfile, profileAvatars } from "../src/lib/profile";
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
 const emails = [0, 1].map(index => `profile-${randomUUID()}-${index}@example.com`);
@@ -26,7 +26,7 @@ after(async () => {
 });
 
 test("profile validation accepts optional details, real leap dates and local-day boundaries", () => {
-  assert.deepEqual(parseProfile({ name: "  Jordan  " }), { name: "Jordan", dateOfBirth: null, sex: null });
+  assert.deepEqual(parseProfile({ name: "  Jordan  " }), { name: "Jordan", dateOfBirth: null, sex: null, avatarId: null });
   assert.equal(parseProfile({ name: "Jordan", dateOfBirth: "2000-02-29", sex: "prefer_not_to_say" }).dateOfBirth, "2000-02-29");
   assert.equal(parseProfile({ name: "Jordan", dateOfBirth: "2026-01-02", timeZone: "Asia/Kolkata" }, undefined, new Date("2026-01-01T20:00:00Z")).dateOfBirth, "2026-01-02");
   for (const body of [{ name: " " }, { name: "x".repeat(81) }, { name: "x\u0000" }, { name: 1 }, { name: "Jordan", dateOfBirth: "1900-02-29" }, { name: "Jordan", dateOfBirth: "2100-01-01" }, { name: "Jordan", dateOfBirth: "1899-12-31" }, { name: "Jordan", sex: "invalid" }, { name: "Jordan", timeZone: "Not/AZone" }, { name: "Jordan", email: "other@example.com" }]) assert.throws(() => parseProfile(body));
@@ -76,4 +76,19 @@ test("partial profile edits retain optional values, which can also be cleared", 
   assert.equal((await patch({ dateOfBirth: "", sex: "" })).status, 200);
   const cleared = (await (await get()).json()).user;
   assert.equal(cleared.name, "Jordan Updated"); assert.equal(cleared.dateOfBirth, null); assert.equal(cleared.sex, null);
+});
+
+test("only built-in avatar IDs are accepted, saved per user, and preserved by partial edits", async () => {
+  for (const { id } of profileAvatars) {
+    assert.equal((await patch({ avatarId: id })).status, 200);
+    assert.equal((await (await get()).json()).user.avatarId, id);
+  }
+  assert.equal((await patch({ name: "Avatar Test" })).status, 200);
+  assert.equal((await (await get()).json()).user.avatarId, "panda");
+  assert.equal((await (await get(cookies[1])).json()).user.avatarId, null);
+  for (const avatarId of ["https://example.com/avatar.png", "../../image", "unknown", 1, {}, []]) assert.equal((await patch({ avatarId })).status, 400);
+  assert.equal((await patch({ avatarId: "cat", role: "admin" })).status, 400);
+  assert.equal((await (await get()).json()).user.avatarId, "panda");
+  assert.equal((await patch({ avatarId: null })).status, 200);
+  assert.equal((await (await get()).json()).user.avatarId, null);
 });

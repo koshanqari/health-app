@@ -2,6 +2,8 @@ import Link from "next/link";
 import { MemberTabs } from "@/components/member-tabs";
 import { requireUser } from "@/lib/session";
 import { AppIcon, type AppTab } from "@/components/app-header";
+import { db, type DatabaseRow } from "@/lib/db";
+import type { ProfileAvatarId } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your space" };
@@ -23,6 +25,7 @@ function SmallSteps() {
 
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string; profile?: string }> }) {
   const user = await requireUser();
+  const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [user.id]);
   const { notice, tab, profile } = await searchParams;
   const feature = features.find(item => item.id === tab);
   const activeTab: AppTab = tab === "chat" ? "chat" : feature?.id ?? "home";
@@ -30,6 +33,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
 
   return <MemberTabs
     name={user.name}
+    initialAvatarId={(profileRows[0]?.avatarId ?? null) as ProfileAvatarId | null}
     isAdmin={user.role === "admin"}
     initialTab={activeTab}
     initialProfileOpen={profile === "1"}
