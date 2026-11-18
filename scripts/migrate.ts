@@ -1,5 +1,6 @@
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/lib/auth";
+import { migrateAdminViews } from "../src/lib/admin-view";
 import { migrateCredits } from "../src/lib/credits";
 import { bootstrapAdmin } from "../src/lib/admin";
 import { db } from "../src/lib/db";
@@ -64,6 +65,7 @@ try {
       )
     `);
     await migrateCredits(connection);
+    await migrateAdminViews(connection);
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodChat" (
         id TEXT NOT NULL PRIMARY KEY, "userId" TEXT NOT NULL UNIQUE REFERENCES "user"(id) ON DELETE CASCADE,

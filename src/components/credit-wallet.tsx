@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch, useViewingAs } from "./member-view";
+
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { CreditDetails, PublicCreditDetails, PublicCreditStatus } from "@/lib/credits";
 
@@ -20,6 +22,8 @@ export function CreditWallet({ status, target, label, onStatus, onChanged, admin
 function WalletDialog({ target, onClose, onLoaded, onChanged, adminMode }: {
   adminMode: "credits" | "pricing"; target?: { id: string; name: string; email: string }; onClose: () => void; onLoaded?: (status: PublicCreditStatus) => void; onChanged?: () => void;
 }) {
+  const fetch = useMemberFetch();
+  const viewingAs = useViewingAs();
   const dialog = useRef<HTMLDialogElement>(null), id = useId();
   const [data, setData] = useState<CreditDetails | PublicCreditDetails | null>(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
@@ -70,7 +74,7 @@ function WalletDialog({ target, onClose, onLoaded, onChanged, adminMode }: {
         </details>
         <dl className="credit-facts"><div><dt>Current rate</dt><dd>{adminData.multiplier.toFixed(2)}×</dd></div><div><dt>Typical reply estimate</dt><dd>{amount(adminData.estimatedReplyCost)} credits</dd></div><div><dt>Maximum per reply</dt><dd>{amount(adminData.maximumReplyCharge)} credits</dd></div>{adminData.held > 0 && <div><dt>Reserved for pending replies</dt><dd>{amount(adminData.held)} credits</dd></div>}</dl>
         <p className="credit-help">1 credit = ₹1. Up to {amount(adminData.maximumReplyCharge)} credits are temporarily reserved when you send. Unused credits return after the reply; failed replies aren’t charged.</p></>}
-        {!target && <><button className="primary-button" type="button" onClick={() => setContact(true)}>Add credits</button>{contact && <p className="credit-contact">For more credits, please contact <a href="https://in.linkedin.com/in/koshanqari" target="_blank" rel="noopener noreferrer">Koshan Qari on LinkedIn</a>.</p>}</>}
+        {!target && !viewingAs && <><button className="primary-button" type="button" onClick={() => setContact(true)}>Add credits</button>{contact && <p className="credit-contact">For more credits, please contact <a href="https://in.linkedin.com/in/koshanqari" target="_blank" rel="noopener noreferrer">Koshan Qari on LinkedIn</a>.</p>}</>}
         {adminData && <form className="credit-admin-form" aria-label="Manage AI credits" onSubmit={submit}>
           <fieldset disabled={busy || loading} className="admin-create-fields">
             {adminMode === "credits" && <div className="field"><label htmlFor={id + "-action"}>Action</label><select id={id + "-action"} value={action} onChange={event => { setAction(event.target.value); setNotice(""); }}><option value="topup">Add credits</option><option value="refund">Refund credits</option></select></div>}

@@ -1,5 +1,5 @@
 import { db, type DatabaseRow } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { getMemberSession } from "@/lib/session";
 import { isFoodDate, nextFoodDate } from "@/lib/food";
 import { completeHistoryDays, foodHistoryWindow, historyPeriods, type FoodHistoryDay, type HistoryPeriod } from "@/lib/food-history";
 import { goalVersionForDate, type FoodGoalVersion } from "@/lib/food-goals";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const response = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function GET(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to see your food history." }, 401);
   const params = new URL(request.url).searchParams, period = params.get("period"), anchor = params.get("date");
   if (!historyPeriods.includes(period as HistoryPeriod) || !isFoodDate(anchor)) return response({ message: "Choose a valid period and date." }, 400);

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { MemberTabs } from "@/components/member-tabs";
-import { requireUser } from "@/lib/session";
+import { redirect } from "next/navigation";
+import { getSession, requireUser } from "@/lib/session";
+import { resolveAdminView } from "@/lib/admin-view";
 import { AppIcon, type AppTab } from "@/components/app-header";
 import { db, type DatabaseRow } from "@/lib/db";
 import type { ProfileAvatarId } from "@/lib/profile";
@@ -23,15 +25,26 @@ function SmallSteps() {
   </svg>;
 }
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string; profile?: string }> }) {
-  const user = await requireUser();
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string; profile?: string; view?: string }> }) {
+  const params = await searchParams;
+  let user = await requireUser();
+  let viewingAs = null;
+  if (params.view !== undefined) {
+    const session = await getSession();
+    if (!session || session.user.role !== "admin") redirect("/admin");
+    const target = await resolveAdminView(session.user.id, session.session.id, params.view);
+    if (!target) redirect("/admin?notice=view-ended");
+    user = { ...user, ...target, id: String(target.id), name: String(target.name), email: String(target.email), role: target.role === "admin" ? "admin" : "user" };
+    viewingAs = { token: params.view, name: String(target.name), expiresAt: String(target.viewExpiresAt) };
+  }
   const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [user.id]);
-  const { notice, tab, profile } = await searchParams;
+  const { notice, tab, profile } = params;
   const feature = features.find(item => item.id === tab);
   const activeTab: AppTab = tab === "chat" ? "chat" : feature?.id ?? "home";
   const firstName = user.name.trim().split(/\s+/)[0];
 
   return <MemberTabs
+    viewingAs={viewingAs}
     name={user.name}
     initialAvatarId={(profileRows[0]?.avatarId ?? null) as ProfileAvatarId | null}
     isAdmin={user.role === "admin"}

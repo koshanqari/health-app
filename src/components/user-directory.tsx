@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ViewAsUserButton } from "./member-view";
 import { ChevronIcon } from "./app-header";
 import { CreditWallet } from "./credit-wallet";
 import { useRouter } from "next/navigation";
@@ -47,7 +48,7 @@ export function UserDirectory({ users, currentUserId }: { users: DirectoryUser[]
       <caption className="sr-only">Daywell accounts</caption>
       <thead><tr>{columns.map(column => <th scope="col" key={column.key} aria-sort={sort.key === column.key ? sort.ascending ? "ascending" : "descending" : "none"}>
         <button type="button" className="sort-button" onClick={() => sortBy(column.key)}>{column.label}{sort.key === column.key && <ChevronIcon direction={sort.ascending ? "up" : "down"} />}</button>
-      </th>)}<th scope="col">AI credits</th><th scope="col">Multiplier</th><th scope="col">Access</th></tr></thead>
+      </th>)}<th scope="col">AI credits</th><th scope="col">Multiplier</th><th scope="col">Access</th><th scope="col">View</th></tr></thead>
       <tbody>{visible.map(user => <tr key={user.id}>
         <td><div className="table-name"><span className="avatar" aria-hidden="true">{user.name.slice(0, 1).toUpperCase()}</span><span>{user.name}</span></div></td>
         <td>{user.email}</td>
@@ -56,6 +57,7 @@ export function UserDirectory({ users, currentUserId }: { users: DirectoryUser[]
         <td><CreditWallet target={user} label={(user.credits ?? 0).toFixed(2)} onChanged={() => router.refresh()} /></td>
         <td><CreditWallet target={user} adminMode="pricing" label={`${(user.multiplier ?? 3.33).toFixed(2)}×`} onChanged={() => router.refresh()} /></td>
         <td><button type="button" className="text-button" aria-label={`${user.role === "admin" ? "Make member" : "Make administrator"}: ${user.email}`} onClick={() => { setNotice(""); setAction({ type: "role", user }); }}>{user.role === "admin" ? "Make member" : "Make administrator"}</button>{user.id === currentUserId && <small className="admin-self">Your account</small>}</td>
+        <td><ViewAsUserButton userId={user.id} email={user.email} /></td>
       </tr>)}</tbody>
     </table></div>
     {filtered.length === 0 && <div className="directory-empty"><p>No accounts match this search.</p><button type="button" className="text-button" onClick={() => { setQuery(""); setFilter("all"); setPage(1); }}>Clear filters</button></div>}

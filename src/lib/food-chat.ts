@@ -31,19 +31,25 @@ async function locked<T>(userId: string, work: (connection: DatabaseConnection, 
   finally { connection.release(); }
 }
 
-export async function getFoodChat(userId: string, options: FoodAiOptions = {}, before?: number): Promise<FoodChatState> {
-  const { chat, rows } = await locked(userId, async (connection, chat) => {
+export async function getFoodChat(userId: string, options: FoodAiOptions = {}, before?: number, readOnly = false): Promise<FoodChatState> {
+  const read = async (connection: Pick<DatabaseConnection, "execute">, chat: DatabaseRow) => {
     const [rows] = await connection.execute<DatabaseRow[]>(
       "SELECT id, \"requestId\", sequence, role, content, payload, to_char(\"createdAt\", 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS \"createdAt\" FROM \"foodChatMessage\" WHERE \"chatId\" = $1 AND sequence < $2 ORDER BY sequence DESC LIMIT 41",
       [chat.id, before ?? Number.MAX_SAFE_INTEGER],
     );
     return { chat, rows };
-  });
+  };
+  let snapshot;
+  if (readOnly) {
+    const [chats] = await db.execute<DatabaseRow[]>('SELECT * FROM "foodChat" WHERE "userId" = $1', [userId]);
+    snapshot = await read(db, chats[0] ?? { id: "", version: 0, draftJson: null, pendingToken: null });
+  } else snapshot = await locked(userId, read);
+  const { chat, rows } = snapshot;
   const pendingDraft = decode<FoodChatPendingDraft | null>(chat.draftJson);
   return {
     chatId: chat.id, version: Number(chat.version), draft: pendingDraft && !isGoalDraft(pendingDraft) ? pendingDraft : null, goalDraft: pendingDraft && isGoalDraft(pendingDraft) ? pendingDraft : null, pending: !!chat.pendingToken,
     messages: rows.slice(0, 40).reverse().map(row => ({ ...row, sequence: Number(row.sequence), payload: decode(row.payload) })) as FoodChatMessage[],
-    hasMore: rows.length > 40, quota: await foodAiStatus(userId, options.settings),
+    hasMore: rows.length > 40, quota: await foodAiStatus(userId, options.settings, readOnly),
   };
 }
 

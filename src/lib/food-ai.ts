@@ -55,15 +55,15 @@ async function usage(settings: FoodAiSettings, now = new Date()) {
   return { month, day, used: Number(budget[0]?.usedMicros ?? 0) };
 }
 
-export async function foodAiStatus(userId: string, settings = foodAiSettings()): Promise<PhotoAnalysisStatus> {
-  await db.execute("UPDATE \"foodAiUsage\" SET \"resultJson\" = NULL, \"cacheExpiresAt\" = NULL WHERE \"cacheExpiresAt\" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')");
+export async function foodAiStatus(userId: string, settings = foodAiSettings(), readOnly = false): Promise<PhotoAnalysisStatus> {
+  if (!readOnly) await db.execute("UPDATE \"foodAiUsage\" SET \"resultJson\" = NULL, \"cacheExpiresAt\" = NULL WHERE \"cacheExpiresAt\" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')");
   const { used, day } = await usage(settings);
   const [counts] = await db.execute<DatabaseRow[]>(
     "SELECT COUNT(*)::integer AS total FROM \"foodAiUsage\" WHERE scope = $1 AND \"createdAt\" >= $2",
     [settings.scope, day],
   );
   return {
-    credits: publicCreditStatus(await getCreditDetails(userId, false)),
+    credits: publicCreditStatus(await getCreditDetails(userId, false, readOnly)),
     configured: !!settings.apiKey,
     remainingToday: Math.max(0, settings.globalDailyLimit - Number(counts[0].total)),
     monthlyBudgetUsd: settings.monthlyBudgetMicros / 1_000_000,

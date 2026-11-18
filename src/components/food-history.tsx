@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch } from "./member-view";
+
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronIcon } from "./app-header";
 import { isFoodDate, localDateTime } from "@/lib/food";
@@ -11,6 +13,7 @@ const format = (value: number) => new Intl.NumberFormat("en-IN", { maximumFracti
 const dateLabel = (date: string, options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }) => new Intl.DateTimeFormat("en-GB", options).format(new Date(date + "T12:00:00Z"));
 
 export function FoodHistory({ active, date, revision, onSelectDate }: { active: boolean; date: string; revision: number; onSelectDate: (value: string) => void }) {
+  const fetch = useMemberFetch();
   const [period, setPeriod] = useState<HistoryPeriod>("W");
   const [anchor, setAnchor] = useState(date);
   const [nutrient, setNutrient] = useState<GoalNutrient>("calories");

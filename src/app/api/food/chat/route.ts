@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/session";
+import { getMemberSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "@/lib/food-chat";
 import { FoodAiError, readLimitedBody } from "@/lib/food-ai";
@@ -14,16 +14,17 @@ function failure(error: unknown) {
   return json({ message: "Kay is unavailable right now. You can still log food in the journal." }, 503);
 }
 export async function GET(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to chat with Kay." }, 401);
   const cursor = new URL(request.url).searchParams.get("before");
   if (cursor !== null && (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor)) || Number(cursor) < 1)) return json({ message: "Choose a valid conversation page." }, 400);
-  try { return json(await getFoodChat(session.user.id, {}, cursor === null ? undefined : Number(cursor))); }
+  try { return json(await getFoodChat(session.user.id, {}, cursor === null ? undefined : Number(cursor), session.readOnly)); }
   catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to chat with Kay." }, 401);
+  if (session.readOnly) return json({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return json({ message: "This request is not allowed." }, 403);
   try {
     if (!request.headers.get("content-type")?.startsWith("multipart/form-data")) return json({ message: "Send a message or photo." }, 415);
@@ -38,8 +39,9 @@ export async function POST(request: Request) {
   } catch (error) { return failure(error); }
 }
 export async function PATCH(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to log food." }, 401);
+  if (session.readOnly) return json({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return json({ message: "This request is not allowed." }, 403);
   try {
     if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ message: "Send food details as JSON." }, 415);
@@ -51,8 +53,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to start a new chat." }, 401);
+  if (session.readOnly) return json({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return json({ message: "This request is not allowed." }, 403);
   try { return json(await resetFoodChat(session.user.id)); }
   catch (error) { return failure(error); }

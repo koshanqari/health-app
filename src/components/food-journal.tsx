@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch, useViewingAs } from "./member-view";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppIcon, ChevronIcon } from "./app-header";
 import { FoodGoalPanel } from "./food-goals";
@@ -22,6 +24,7 @@ export function FoodForm({ entry, draft, date, onClose, onSaved, saveFood, draft
   entry: FoodEntry | null; draft?: (FoodEstimate & Partial<FoodInput>) | null; date: string; onClose: () => void; onSaved: (date: string, edited: boolean) => void;
   saveFood?: (food: FoodInput) => Promise<void>; draftLabel?: string; saveLabel?: string;
 }) {
+  const fetch = useMemberFetch();
   const dialog = useRef<HTMLDialogElement>(null);
   const initial = entry ?? draft;
   const [category, setCategory] = useState(initial?.category ?? "healthy");
@@ -103,6 +106,8 @@ export function FoodForm({ entry, draft, date, onClose, onSaved, saveFood, draft
 }
 
 export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAskAI?: (effectiveFrom: string) => void }) {
+  const fetch = useMemberFetch();
+  const viewingAs = useViewingAs();
   const journalCache = useRef(new Map<string, { value: FoodJournalData; at: number }>());
   const inFlight = useRef(new Set<string>());
   const [date, setDate] = useState("");
@@ -206,7 +211,7 @@ export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAs
   }
 
   return <div className="food-journal">
-    <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!date}><span aria-hidden="true">+</span> Log food</button></div></div>
+    <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!!viewingAs || !date}><span aria-hidden="true">+</span> Log food</button></div></div>
     {data && <FoodGoalPanel onAskAI={onAskAI} key={date} goals={data.goals ?? null} effectiveFrom={data.goalEffectiveFrom ?? null} day={data.day} date={date} onSaved={effectiveFrom => {
       setNotice(`Goals saved from ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(effectiveFrom + "T12:00"))}.`);
       refreshJournal();
@@ -222,13 +227,13 @@ export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAs
     {loading && <p className="journal-loading" role="status">Loading your journal…</p>}
     {data && <>
       <section className="meal-journal" aria-labelledby="meal-journal-title"><div className="section-heading"><h2 id="meal-journal-title">Meals for {new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(new Date(date + "T12:00"))}</h2><p>{data.day.entries} {data.day.entries === 1 ? "entry" : "entries"} logged</p></div>
-        {data.entries.length === 0 ? <div className="food-empty"><AppIcon name="food" /><h3>A little space for what you ate.</h3><p>Breakfast, a quick snack, or dinner with friends.<br />Start with your first food entry.</p><button className="primary-button" onClick={() => setForm("new")}>Log your first food</button></div>
+        {data.entries.length === 0 ? <div className="food-empty"><AppIcon name="food" /><h3>A little space for what you ate.</h3><p>Breakfast, a quick snack, or dinner with friends.<br />Start with your first food entry.</p><button className="primary-button" disabled={!!viewingAs} onClick={() => setForm("new")}>Log your first food</button></div>
           : <div className="meal-groups">{[...meals, null].map(meal => {
             const groupLabel = meal === null ? "Other" : mealLabels[meal];
             const entries = data.entries.filter(entry => entry.meal === meal);
             return entries.length > 0 && <section className="meal-group" key={meal ?? "other"} aria-label={groupLabel}><h3>{groupLabel}</h3><div className="food-entry-list">{entries.map(entry => <article className="food-entry" key={entry.id} aria-label={entry.name || "Food entry"}>
               <div className="food-entry-top"><div><h4>{entry.name || "Food entry"}</h4><p className="entry-meta"><time dateTime={entry.eatenAtLocal}>{timeFormat.format(new Date(entry.eatenAtLocal))}</time><span aria-hidden="true">·</span><span>{entry.category === "healthy" ? "Healthy" : "Unhealthy"}</span>{entry.analysisId && <><span aria-hidden="true">·</span><span>AI estimate</span></>}</p></div><div className="entry-calories"><strong>{format(entry.calories)}</strong><span> kcal</span></div></div>
-              <div className="food-entry-bottom"><p>Protein {format(entry.protein)} g <span>·</span> Carbs {format(entry.carbs)} g <span>·</span> Fat {format(entry.fat)} g</p><div className="entry-actions"><button className="text-button" disabled={deleting} onClick={() => setForm(entry)}>Edit</button><button className="text-button" disabled={deleting} onClick={() => setConfirmDelete(entry.id)}>Delete</button></div></div>
+              <div className="food-entry-bottom"><p>Protein {format(entry.protein)} g <span>·</span> Carbs {format(entry.carbs)} g <span>·</span> Fat {format(entry.fat)} g</p><div className="entry-actions"><button className="text-button" disabled={!!viewingAs || deleting} onClick={() => setForm(entry)}>Edit</button><button className="text-button" disabled={!!viewingAs || deleting} onClick={() => setConfirmDelete(entry.id)}>Delete</button></div></div>
               {confirmDelete === entry.id && <div className="delete-confirmation" role="group" aria-label={"Delete " + (entry.name || "Food entry")}><p>Delete this food entry?</p><div><button className="text-button" disabled={deleting} onClick={() => setConfirmDelete(null)}>Keep entry</button><button className="text-button delete-button" disabled={deleting} onClick={() => deleteEntry(entry.id)}>{deleting ? "Deleting…" : "Delete entry"}</button></div></div>}
             </article>)}</div></section>;
           })}</div>}

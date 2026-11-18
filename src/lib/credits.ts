@@ -155,11 +155,18 @@ export async function settleCredits(connection: DatabaseConnection, userId: stri
   await connection.execute(`INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason, "usageId", "multiplierHundred", "fxCents", "providerCostMicros")
     VALUES ($1, $2, 'usage', $3, $4, $5, $6, $7, $8, $9)`, [randomUUID(), userId, -charged, wallet.balanceCents - charged, reason, usageId, usage.creditMultiplierHundred, usage.creditFxCents, costMicros]);
 }
-export async function getCreditDetails(userId: string, includeHistory: boolean | "additions" = true): Promise<CreditDetails> {
+export async function getCreditDetails(userId: string, includeHistory: boolean | "additions" = true, readOnly = false): Promise<CreditDetails> {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
-    const wallet = await lockWallet(connection, userId), { fxCents } = creditSettings();
+    if (readOnly) await connection.execute('SET TRANSACTION READ ONLY');
+    let wallet: { balanceCents: number; heldCents: number; multiplierHundred: number };
+    if (readOnly) {
+      const [rows] = await connection.execute<DatabaseRow[]>('SELECT "balanceCents", "heldCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [userId]);
+      if (!rows.length) throw new CreditError(404, "CREDIT_WALLET", "This credit account was not found.");
+      wallet = { balanceCents: Number(rows[0].balanceCents), heldCents: Number(rows[0].heldCents), multiplierHundred: Number(rows[0].multiplierHundred) };
+    } else wallet = await lockWallet(connection, userId);
+    const { fxCents } = creditSettings();
     const [average] = await connection.execute<DatabaseRow[]>(`SELECT AVG("costMicros") AS average FROM (
       SELECT "costMicros" FROM "foodAiUsage" WHERE "userId" = $1 AND status = 'succeeded' AND "promptTokens" IS NOT NULL AND "costMicros" > 0 ORDER BY "createdAt" DESC LIMIT 20
     ) recent`, [userId]);

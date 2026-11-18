@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch, useViewingAs } from "./member-view";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { localDateTime } from "@/lib/food";
 import { profileAvatars, type ProfileAvatarId, type UserProfile } from "@/lib/profile";
@@ -8,6 +10,8 @@ import { CreditWallet } from "./credit-wallet";
 import { SignOut } from "./sign-out";
 
 export function Profile({ onClose, onSaved, admin = false }: { onClose: () => void; onSaved: (user: UserProfile) => void; admin?: boolean }) {
+  const fetch = useMemberFetch();
+  const viewingAs = useViewingAs();
   const dialog = useRef<HTMLDialogElement>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [draft, setDraft] = useState<{ name: string; dateOfBirth: string; sex: string; heightCm: string; avatarId: ProfileAvatarId | null }>({ name: "", dateOfBirth: "", sex: "", heightCm: "", avatarId: null });
@@ -46,16 +50,16 @@ export function Profile({ onClose, onSaved, admin = false }: { onClose: () => vo
     <div className="profile-heading"><button type="button" className="text-button" aria-label={admin ? "Back to admin" : "Back to app"} disabled={busy} onClick={onClose}>Back</button><h1 id="profile-title">Profile</h1></div>
     {loading ? <p className="profile-loading" role="status">Loading your profile…</p> : !user ? <div className="form-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : <form aria-label="Your profile" className="profile-form" onSubmit={submit}>
       <div className="food-form-body">
-        <fieldset className="profile-picture-picker food-facts" disabled={busy}>
+        <fieldset className="profile-picture-picker food-facts" disabled={busy || !!viewingAs}>
           <legend>Profile picture</legend>
           <div className="profile-avatar-preview" role="img" aria-label={draft.avatarId ? `${profileAvatars.find(avatar => avatar.id === draft.avatarId)?.label} avatar preview` : "Initials avatar preview"}><ProfileAvatar avatarId={draft.avatarId} name={draft.name} /></div>
           <div className="profile-avatar-options">{profileAvatars.map(avatar => <label key={avatar.id} className={draft.avatarId === avatar.id ? "profile-avatar-option selected" : "profile-avatar-option"}>
             <input type="radio" name="profile-avatar" value={avatar.id} checked={draft.avatarId === avatar.id} onChange={() => { setDraft(current => ({ ...current, avatarId: avatar.id })); setSaved(false); }} />
             <ProfileAvatar avatarId={avatar.id} name={draft.name} /><span>{avatar.label}</span>
           </label>)}</div>
-          <button type="button" className="text-button profile-use-initials" disabled={!draft.avatarId || busy} onClick={() => { setDraft(current => ({ ...current, avatarId: null })); setSaved(false); }}>Use initials</button>
+          <button type="button" className="text-button profile-use-initials" disabled={!!viewingAs || !draft.avatarId || busy} onClick={() => { setDraft(current => ({ ...current, avatarId: null })); setSaved(false); }}>Use initials</button>
         </fieldset>
-        <fieldset disabled={busy} className="food-facts"><div className="food-input-group">
+        <fieldset disabled={busy || !!viewingAs} className="food-facts"><div className="food-input-group">
           <div className="food-detail-row"><label htmlFor="profile-name">Name</label><input id="profile-name" autoComplete="name" required maxLength={80} value={draft.name} onChange={event => { setDraft(current => ({ ...current, name: event.target.value })); setSaved(false); }} /></div>
           <div className="food-detail-row"><label htmlFor="profile-email">Email</label><input id="profile-email" type="email" autoComplete="email" readOnly value={user.email} /></div>
           <div className="food-detail-row"><label htmlFor="profile-dob">Date of birth</label><input id="profile-dob" type="date" autoComplete="bday" min="1900-01-01" max={localDateTime().slice(0, 10)} value={draft.dateOfBirth} onChange={event => { setDraft(current => ({ ...current, dateOfBirth: event.target.value })); setSaved(false); }} /></div>
@@ -66,9 +70,9 @@ export function Profile({ onClose, onSaved, admin = false }: { onClose: () => vo
         {error && <p className="form-error" role="alert">{error}</p>}
         {saved && <p className="profile-saved" role="status">Profile saved.</p>}
       </div>
-      <div className="profile-actions"><button type="submit" className="primary-button" disabled={busy || !dirty || !draft.name.trim()}>{busy ? "Saving…" : "Save changes"}</button></div>
+      <div className="profile-actions"><button type="submit" className="primary-button" disabled={!!viewingAs || busy || !dirty || !draft.name.trim()}>{busy ? "Saving…" : "Save changes"}</button></div>
     </form>}
     <div className="profile-credit-link"><CreditWallet label="View AI credits" /></div>
-    <div className="profile-signout"><SignOut disabled={busy} redirectTo={admin ? "/admin" : "/login"} /></div>
+    {!viewingAs && <div className="profile-signout"><SignOut disabled={busy || !!viewingAs} redirectTo={admin ? "/admin" : "/login"} /></div>}
   </dialog>;
 }

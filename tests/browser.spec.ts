@@ -68,6 +68,7 @@ test.afterAll(async () => {
   await db.execute("DELETE FROM \"foodAiUsage\" WHERE scope = $1", [aiScope]);
   await db.execute("DELETE FROM \"foodAiBudget\" WHERE scope = $1", [aiScope]);
   const [users] = await db.execute<DatabaseRow[]>("SELECT id FROM \"user\" WHERE email IN ($1, $2, $3)", [memberEmail, adminEmail, signupEmail]);
+  await db.execute('DELETE FROM "adminView" WHERE "actorId" = ANY($1::text[]) OR "targetId" = ANY($1::text[])', [users.map(user => user.id)]);
   for (const user of users) {
     await db.execute("DELETE FROM \"session\" WHERE \"userId\" = $1", [user.id]);
     await db.execute("DELETE FROM \"account\" WHERE \"userId\" = $1", [user.id]);
@@ -1179,4 +1180,50 @@ test("admin sidebar opens cost docs, supports direct links and preserves unsaved
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-docs-scroll.png`, fullPage: true });
   await content.evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-cost-docs.png`, fullPage: true });
+});
+
+
+test("admin can view a member read-only and exit without replacing either account session", async ({ page }, info) => {
+  await db.execute(`INSERT INTO "foodEntry" (id, "userId", name, calories, protein, carbs, fat, category, "eatenAtLocal", "timeZone")
+    VALUES ($1, $2, 'Private view meal', 400, 25, 45, 13, 'healthy', $3, 'Asia/Kolkata')`, [randomUUID(), memberId, new Date().toISOString().slice(0, 10) + "T12:00"]);
+  const [targets] = await db.execute<DatabaseRow[]>('SELECT name FROM "user" WHERE id = $1', [memberId]);
+  const targetName = String(targets[0].name);
+  const [originalChats] = await db.execute<DatabaseRow[]>('SELECT * FROM "foodChat" WHERE "userId" = $1', [memberId]);
+  await page.goto("/admin");
+  await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByLabel("Search accounts", { exact: true })).toBeVisible();
+  const admin = (await (await page.request.get("/api/account")).json()).user;
+  await page.getByLabel("Search accounts", { exact: true }).fill(memberEmail);
+  await page.getByRole("button", { name: `View as user: ${memberEmail}`, exact: true }).click();
+  await expect(page).toHaveURL(/\/app\?view=[a-f0-9]{64}$/);
+  const banner = page.getByRole("complementary", { name: "Admin viewing session", exact: true });
+  await expect(banner).toContainText(`Viewing as ${targetName}`);
+  await expect(banner).toContainText("Read-only");
+  await expect(page.getByRole("heading", { name: `Hi, ${targetName.trim().split(/\s+/)[0]}.`, exact: true })).toBeVisible();
+  const writes: string[] = [];
+  page.on("request", request => { if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method()) && /^\/api\/(food|account|credits)/.test(new URL(request.url()).pathname)) writes.push(request.url()); });
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  const profile = page.getByRole("dialog", { name: "Profile", exact: true });
+  await expect(profile.getByLabel("Name", { exact: true })).toBeDisabled();
+  await expect(profile.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await expect(profile.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Food", exact: true }).click();
+  await expect(page).toHaveURL(/view=[a-f0-9]{64}/);
+  await expect(page.getByText("Private view meal", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log food", exact: true })).toBeDisabled();
+  for (const button of await page.getByRole("button", { name: "Edit", exact: true }).all()) await expect(button).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^(Set|Edit) goals$/ })).toBeDisabled();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "AI", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveCount(0);
+  const [chats] = await db.execute<DatabaseRow[]>('SELECT * FROM "foodChat" WHERE "userId" = $1', [memberId]);
+  expect(chats).toEqual(originalChats);
+  expect(writes).toEqual([]);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-view-as-user.png`, fullPage: true });
+  await banner.getByRole("button", { name: "Exit view", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  expect((await (await page.request.get("/api/account")).json()).user.id).toBe(admin.id);
 });

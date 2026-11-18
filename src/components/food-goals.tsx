@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch, useViewingAs } from "./member-view";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { isFoodDate, localDateTime, macroCalorieEstimate, type FoodSummary } from "@/lib/food";
 import { foodGoalProgress, goalMacroValues, goalNutrients, parseFoodGoals, suggestedFoodGoals, suggestedMacros, type FoodGoals, type GoalNutrient } from "@/lib/food-goals";
@@ -15,6 +17,7 @@ export function GoalForm({ goals, initialEffectiveFrom, onClose, onSaved, onAskA
   onAskAI?: (effectiveFrom: string) => void;
   saveGoals?: (goals: FoodGoals, effectiveFrom: string) => Promise<void>;
 }) {
+  const fetch = useMemberFetch();
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(() => toDraft(goals ?? suggestedFoodGoals()));
   const [custom, setCustom] = useState(() => {
@@ -107,12 +110,13 @@ function NutrientProgress({ nutrient, consumed, goals, effectiveFrom }: { nutrie
 }
 
 export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskAI }: { onAskAI?: (effectiveFrom: string) => void; goals: FoodGoals | null; effectiveFrom: string | null; day: FoodSummary; date: string; onSaved: (effectiveFrom: string) => void }) {
+  const viewingAs = useViewingAs();
   const [editing, setEditing] = useState(false);
   const today = new Date(), selected = new Date(date + "T12:00");
   const isToday = today.toDateString() === selected.toDateString();
   return <>
     <section className="food-goals" aria-label="Daily food goals">
-      <div className="goal-panel-heading"><h2>{isToday ? "Today’s goals" : `Goals for ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(selected)}`}</h2><button className="text-button" onClick={() => setEditing(true)}>{goals ? "Edit goals" : "Set goals"}</button></div>
+      <div className="goal-panel-heading"><h2>{isToday ? "Today’s goals" : `Goals for ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(selected)}`}</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setEditing(true)}>{goals ? "Edit goals" : "Set goals"}</button></div>
       {goals ? <div className="goal-progress-grid">{goalNutrients.map(nutrient => <NutrientProgress key={nutrient} nutrient={nutrient} consumed={day[nutrient]} goals={goals} effectiveFrom={effectiveFrom} />)}</div> : <div className="goal-unset"><p>No goal set for this date.</p><p>Set a range and choose when it applies.</p></div>}
     </section>
     {editing && <GoalForm goals={goals} onAskAI={onAskAI ? from => { setEditing(false); onAskAI(from); } : undefined} onClose={() => setEditing(false)} onSaved={value => { onSaved(value); setEditing(false); }} />}

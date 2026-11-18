@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/session";
+import { getMemberSession } from "@/lib/session";
 import { db, type DatabaseRow } from "@/lib/db";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { parseProfile, type UserProfile } from "@/lib/profile";
@@ -9,8 +9,8 @@ const unavailable = () => response({ message: "We couldn’t reach your profile.
 const selectProfile = `SELECT u.id, u.name, u.email, u.role, to_char(p."dateOfBirth", 'YYYY-MM-DD') AS "dateOfBirth", p.sex, p."avatarId", p."heightCm"::double precision AS "heightCm"
   FROM "user" u LEFT JOIN "userProfile" p ON p."userId" = u.id WHERE u.id = $1`;
 
-export async function GET() {
-  const session = await getSession();
+export async function GET(request: Request) {
+  const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to continue." }, 401);
   try {
     const [rows] = await db.execute<DatabaseRow[]>(selectProfile, [session.user.id]);
@@ -19,8 +19,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to update your profile." }, 401);
+  if (session.readOnly) return response({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return response({ message: "This request is not allowed." }, 403);
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return response({ message: "Send profile details as JSON." }, 415);
   if (Number(request.headers.get("content-length")) > 4096) return response({ message: "These profile details are too large." }, 413);

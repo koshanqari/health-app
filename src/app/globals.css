@@ -644,3 +644,8 @@ h1, h2, h3 { line-height: 1.2; }
   .docs-table { font-size: 12px; }
   .docs-table th, .docs-table td { padding: 12px 8px; }
 }
+
+.viewing-banner { position: sticky; top: 0; z-index: 40; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 24px; background: var(--selected); border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; }
+.viewing-banner span { display: block; color: var(--muted); font-size: 11px; }
+.viewing-banner small { display: block; color: var(--danger); }
+.viewing-banner button { flex-shrink: 0; }

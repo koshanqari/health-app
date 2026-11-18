@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { MemberViewProvider, ViewingBanner, type ViewingAs } from "./member-view";
 import { AppShell, type AppTab } from "./app-header";
 import { FoodChat } from "./food-chat";
 import { FoodJournal } from "./food-journal";
@@ -13,8 +14,9 @@ const readTab = (search: string): AppTab => {
   return value === "chat" || value === "food" || value === "activity" || value === "progress" ? value : "home";
 };
 
-export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress }: {
+export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress, viewingAs = null }: {
   name: string; initialAvatarId?: ProfileAvatarId | null; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
+  viewingAs?: ViewingAs | null;
   home: ReactNode; activity: ReactNode; progress: ReactNode;
 }) {
   const [aiStarter, setAiStarter] = useState<{ id: number; prompt: string } | null>(null);
@@ -75,6 +77,7 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
     const url = new URL(anchor.href, window.location.href);
     if (url.origin !== window.location.origin || url.pathname !== "/app") return;
     event.preventDefault();
+    if (viewingAs) url.searchParams.set("view", viewingAs.token);
     const destination = url.pathname + url.search + url.hash;
     if (destination !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.pushState(null, "", destination);
@@ -82,17 +85,18 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
     selectTab(readTab(url.search));
   }
 
-  return <div onClickCapture={navigate}>
+  return <MemberViewProvider value={viewingAs}><div onClickCapture={navigate}>
     <AppShell name={displayName} avatarId={avatarId} isAdmin={isAdmin} activeTab={tab} onOpenProfile={openProfile}>
+      <ViewingBanner />
       <main id="main-content" className={tab === "chat" ? "workspace-main member-main ai-main" : "workspace-main member-main"}>
         {notice}
         <div hidden={tab !== "home"}>{home}</div>
         <div hidden={tab !== "chat"}><FoodChat active={tab === "chat"} starter={aiStarter} /></div>
-        <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} onAskAI={askAIForGoals} /></div>
+        <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} onAskAI={viewingAs ? undefined : askAIForGoals} /></div>
         <div hidden={tab !== "activity"}>{activity}</div>
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>
     </AppShell>
     {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); setAvatarId(user.avatarId); router.refresh(); }} />}
-  </div>;
+  </div></MemberViewProvider>;
 }

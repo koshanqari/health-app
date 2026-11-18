@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/session";
+import { getMemberSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { analyzeFoodPhoto, FoodAiError, foodAiSettings, foodAiStatus, MAX_PHOTO_BYTES } from "@/lib/food-ai";
 
@@ -11,16 +11,17 @@ function errorResponse(error: unknown) {
   return json({ message: "Photo analysis is unavailable. You can still log food manually." }, 503);
 }
 
-export async function GET() {
-  const session = await getSession();
+export async function GET(request: Request) {
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to use photo analysis." }, 401);
-  try { return json(await foodAiStatus(session.user.id)); }
+  try { return json(await foodAiStatus(session.user.id, undefined, session.readOnly)); }
   catch (error) { return errorResponse(error); }
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return json({ message: "Sign in to use photo analysis." }, 401);
+  if (session.readOnly) return json({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return json({ message: "This request is not allowed." }, 403);
   try {
     if (!foodAiSettings().apiKey) throw new FoodAiError(503, "AI_NOT_CONFIGURED", "Photo analysis isn’t connected yet. You can still log food manually.");

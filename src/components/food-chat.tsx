@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemberFetch, useViewingAs } from "./member-view";
+
 import Link from "next/link";
 import { memo, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { UpdateGuard } from "./app-updates";
@@ -19,6 +21,8 @@ function ComposerIcon({ camera = false }: { camera?: boolean }) {
 }
 
 export function FoodChat({ active, starter }: { active: boolean; starter?: { id: number; prompt: string } | null }) {
+  const fetch = useMemberFetch();
+  const viewingAs = useViewingAs();
   const [state, setState] = useState<FoodChatState | null>(null);
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<Attachment[]>([]);
@@ -59,7 +63,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   async function load(fresh = !state) {
     setLoading(true); setError("");
     try {
-      if (fresh) {
+      if (fresh && !viewingAs) {
         const response = await fetch("/api/food/chat", { method: "DELETE" });
         const next = await response.json();
         if (!response.ok) throw new Error(next.message || "We couldn’t start a new chat.");
@@ -180,25 +184,25 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   const waiting = busy || !!state?.pending;
   const creditLimited = !!state?.quota.credits && !state.quota.credits.canSend;
   const limited = creditLimited || !!state && (state.quota.remainingToday < 1 || state.quota.remainingBudgetUsd < .01);
-  const canSend = !!state?.quota.configured && !waiting && !loading && !preparing && !limited && (!!text.trim() || photos.length > 0);
+  const canSend = !viewingAs && !!state?.quota.configured && !waiting && !loading && !preparing && !limited && (!!text.trim() || photos.length > 0);
   const messages = state?.messages ?? [];
   const visibleOptimistic = optimistic && !messages.some(message => message.id === optimistic.id);
 
   return <section className="food-chat" aria-label="Kay">
-    <div className="chat-toolbar"><CreditWallet status={state?.quota.credits} onStatus={credits => setState(current => current ? { ...current, quota: { ...current.quota, credits } } : current)} /><button className="text-button" type="button" onClick={() => void load(true)} disabled={loading || busy || !state || !!state?.pending}>New chat</button></div>
+    <div className="chat-toolbar"><CreditWallet status={state?.quota.credits} onStatus={credits => setState(current => current ? { ...current, quota: { ...current.quota, credits } } : current)} /><button className="text-button" type="button" onClick={() => void load(true)} disabled={!!viewingAs || loading || busy || !state || !!state?.pending}>New chat</button></div>
     <div className={photos.length ? "chat-layout has-photos" : "chat-layout"}>
       <div className="chat-thread" ref={thread} role="log" aria-label="Conversation with Kay" aria-live="polite" onScroll={() => { const element = thread.current; if (element) scrollToEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
         {loading && <p className="chat-status" role="status">Loading your conversation…</p>}
-        {state && messages.length === 0 && !visibleOptimistic && <div className="chat-empty"><h2>Hi, I’m Kay.</h2><p>Start with a message or a few photos.</p><div className="chat-suggestions">{["I had poha and chai for breakfast", "Show today’s logged totals"].map(example => <button type="button" key={example} onClick={() => { setText(example); input.current?.focus(); }}>{example}</button>)}</div></div>}
-        {messages.map(message => <ChatMessage key={message.id} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting} onReview={setReview} />)}
-        {state?.draft && !messages.some(message => message.id === state.draft!.draftId) && <ChatMessage message={{ id: state.draft.draftId, requestId: state.draft.draftId, sequence: 0, role: "assistant", content: "Your meal draft is still ready to review.", createdAt: "", payload: { state: "ready", draft: state.draft } }} activeDraft={state.draft.draftId} busy={waiting} onReview={setReview} />}
-        {state?.goalDraft && !messages.some(message => message.id === state.goalDraft!.draftId) && <ChatMessage message={{ id: state.goalDraft.draftId, requestId: state.goalDraft.draftId, sequence: 0, role: "assistant", content: "Your goal proposal is still ready to review.", createdAt: "", payload: { state: "ready", goalDraft: state.goalDraft } }} activeGoalDraft={state.goalDraft.draftId} busy={waiting} onReview={setReview} onReviewGoals={setGoalReview} />}
+        {state && messages.length === 0 && !visibleOptimistic && <div className="chat-empty"><h2>Hi, I’m Kay.</h2><p>Start with a message or a few photos.</p><div className="chat-suggestions">{["I had poha and chai for breakfast", "Show today’s logged totals"].map(example => <button type="button" disabled={!!viewingAs} key={example} onClick={() => { setText(example); input.current?.focus(); }}>{example}</button>)}</div></div>}
+        {messages.map(message => <ChatMessage key={message.id} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting || !!viewingAs} onReview={setReview} />)}
+        {state?.draft && !messages.some(message => message.id === state.draft!.draftId) && <ChatMessage message={{ id: state.draft.draftId, requestId: state.draft.draftId, sequence: 0, role: "assistant", content: "Your meal draft is still ready to review.", createdAt: "", payload: { state: "ready", draft: state.draft } }} activeDraft={state.draft.draftId} busy={waiting || !!viewingAs} onReview={setReview} />}
+        {state?.goalDraft && !messages.some(message => message.id === state.goalDraft!.draftId) && <ChatMessage message={{ id: state.goalDraft.draftId, requestId: state.goalDraft.draftId, sequence: 0, role: "assistant", content: "Your goal proposal is still ready to review.", createdAt: "", payload: { state: "ready", goalDraft: state.goalDraft } }} activeGoalDraft={state.goalDraft.draftId} busy={waiting || !!viewingAs} onReview={setReview} onReviewGoals={setGoalReview} />}
         {visibleOptimistic && <ChatMessage message={optimistic} busy activeDraft={undefined} onReview={setReview} />}
         {waiting && <p className="chat-typing" role="status">Working on your reply… <span>You can switch tabs.</span></p>}
       </div>
       {error && <div className="chat-error" role="alert"><p>{error}</p>{!state && <button className="text-button" type="button" onClick={() => void load()} disabled={loading}>Retry</button>}</div>}
       {notice && <p className="chat-saved" role="status">{notice}</p>}
-      <form className="chat-composer" aria-label="Message Kay" onSubmit={send}>
+      {!viewingAs && <form className="chat-composer" aria-label="Message Kay" onSubmit={send}>
         {photos.length > 0 && <div className="chat-attachments">
           <div className="chat-photo-strip" aria-label="Attached photos">{photos.map((photo, index) => <div className="chat-photo-thumb" key={photo.id}><img src={photo.url} width="56" height="56" alt={`Food photo ${index + 1} ready to send`} /><button type="button" aria-label={`Remove photo ${index + 1}`} disabled={waiting || preparing} onClick={() => { selection.current++; const next = attachments.current.filter(item => item.id !== photo.id); replacePhotos(next); if (next.length < 2) setPhotoMode("auto"); retry.current = null; }}>×</button></div>)}</div>
           <div className="chat-photo-details"><span>{photos.length} of {MAX_CHAT_PHOTOS} photos</span>{photos.length > 1 && <label className="chat-photo-mode"><span className="sr-only">Photos show</span><select aria-label="Photos show" value={photoMode} disabled={waiting || preparing} onChange={event => { setPhotoMode(event.target.value as FoodChatPhotoMode); retry.current = null; }}><option value="auto">Let Kay work it out</option><option value="meal">Different dishes / one meal</option><option value="angles">Same food, different angles</option></select></label>}</div>
@@ -206,7 +210,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
         <label className="sr-only" htmlFor="food-chat-message">Your message</label>
         <textarea id="food-chat-message" ref={input} rows={2} maxLength={1000} value={text} disabled={waiting || loading || !state || !state.quota.configured} placeholder="Message Kay…" onChange={event => { setText(event.target.value); retry.current = null; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (canSend) event.currentTarget.form?.requestSubmit(); } }} />
         <div className="chat-composer-bottom"><div className="chat-attach-buttons"><label className="chat-icon-button" title="Take food photo"><ComposerIcon camera /><span className="sr-only">Take food photo</span><input className="sr-only" type="file" capture="environment" accept="image/*" aria-label="Take food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label><label className="chat-icon-button" title="Upload food photo"><ComposerIcon /><span className="sr-only">Upload food photo</span><input className="sr-only" type="file" accept="image/*" multiple aria-label="Upload food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label></div><p className="chat-allowance">{preparing ? "Preparing photo…" : state ? !state.quota.configured ? "AI logging isn’t connected yet." : limited ? creditLimited ? "Add credits to continue with Kay." : state.quota.remainingBudgetUsd < .01 ? "Kay’s shared spending limit is reached. Your credits are unchanged." : "Kay’s shared daily limit is reached. Your credits are unchanged." : "" : ""}</p><button className="chat-send" type="submit" aria-label="Send message" disabled={!canSend}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg></button></div>
-      </form>
+      </form>}
     </div>
     {goalReview && <GoalForm goals={goalReview.goals} initialEffectiveFrom={goalReview.effectiveFrom} onClose={() => setGoalReview(null)} saveGoals={async (goals, effectiveFrom) => {
       const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: goalReview.draftId, goals: { ...goals, effectiveFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) });

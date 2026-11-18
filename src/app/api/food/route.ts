@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseChange, DatabaseRow } from "@/lib/db";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { getMemberSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { emptySummary, isFoodDate, nextFoodDate, parseFood, type FoodEntry, type FoodSummary } from "@/lib/food";
 
@@ -10,7 +10,7 @@ const response = (body: unknown, status = 200) => Response.json(body, { status, 
 const unavailable = () => response({ message: "We couldn’t reach your food journal. Please try again." }, 503);
 
 export async function GET(request: Request) {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to view your food journal." }, 401);
   const date = new URL(request.url).searchParams.get("date");
   if (!isFoodDate(date)) return response({ message: "Choose a valid date." }, 400);
@@ -45,8 +45,9 @@ export async function GET(request: Request) {
 }
 
 async function mutate(request: Request, method: "POST" | "PATCH" | "DELETE") {
-  const session = await getSession();
+  const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to change your food journal." }, 401);
+  if (session.readOnly) return response({ message: "Viewing as a user is read-only." }, 403);
   if (!trustedAppOrigins.includes(request.headers.get("origin") ?? "")) return response({ message: "This request is not allowed." }, 403);
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return response({ message: "Send food details as JSON." }, 415);
   if (Number(request.headers.get("content-length")) > 8192) return response({ message: "This entry is too large." }, 413);
