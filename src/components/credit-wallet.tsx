@@ -4,25 +4,26 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { CreditDetails, PublicCreditDetails, PublicCreditStatus } from "@/lib/credits";
 
 const amount = (value: number) => value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-export function CreditWallet({ status, target, label, onStatus, onChanged }: {
+export function CreditWallet({ status, target, label, onStatus, onChanged, adminMode = "credits" }: {
   status?: PublicCreditStatus; target?: { id: string; name: string; email: string }; label?: string;
+  adminMode?: "credits" | "pricing";
   onStatus?: (status: PublicCreditStatus) => void; onChanged?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return <>
-    <button type="button" className="text-button credit-balance" aria-label={target ? `Manage credits: ${target.email}` : "View AI credits"} onClick={() => setOpen(true)}>
+    <button type="button" className="text-button credit-balance" aria-label={target ? `${adminMode === "pricing" ? "Change multiplier" : "Manage credits"}: ${target.email}` : "View AI credits"} onClick={() => setOpen(true)}>
       {label ?? (status ? `Credits remaining: ${amount(status.available)}` : "Credits remaining: …")}
     </button>
-    {open && <WalletDialog target={target} onClose={() => setOpen(false)} onLoaded={onStatus} onChanged={onChanged} />}
+    {open && <WalletDialog adminMode={adminMode} target={target} onClose={() => setOpen(false)} onLoaded={onStatus} onChanged={onChanged} />}
   </>;
 }
-function WalletDialog({ target, onClose, onLoaded, onChanged }: {
-  target?: { id: string; name: string; email: string }; onClose: () => void; onLoaded?: (status: PublicCreditStatus) => void; onChanged?: () => void;
+function WalletDialog({ target, onClose, onLoaded, onChanged, adminMode }: {
+  adminMode: "credits" | "pricing"; target?: { id: string; name: string; email: string }; onClose: () => void; onLoaded?: (status: PublicCreditStatus) => void; onChanged?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null), id = useId();
   const [data, setData] = useState<CreditDetails | PublicCreditDetails | null>(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
-  const [contact, setContact] = useState(false), [action, setAction] = useState("topup"), [revision, setRevision] = useState(0);
+  const [contact, setContact] = useState(false), [action, setAction] = useState(adminMode === "pricing" ? "pricing" : "topup"), [revision, setRevision] = useState(0);
   const retry = useRef<{ body: string; requestId: string } | null>(null);
   const endpoint = "/api/credits" + (target ? "?userId=" + encodeURIComponent(target.id) : "");
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
@@ -54,7 +55,7 @@ function WalletDialog({ target, onClose, onLoaded, onChanged }: {
   }
   const adminData = target && data ? data as CreditDetails : null;
   return <dialog ref={dialog} className="food-dialog credit-dialog" aria-labelledby={id + "-title"} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className="food-form-heading"><h2 id={id + "-title"}>{target ? `Credits · ${target.name}` : "AI credits"}</h2><button className="dialog-close" type="button" aria-label="Close credits" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="food-form-heading"><h2 id={id + "-title"}>{target ? `${adminMode === "pricing" ? "Multiplier" : "Credits"} · ${target.name}` : "AI credits"}</h2><button className="dialog-close" type="button" aria-label="Close credits" disabled={busy} onClick={onClose}>×</button></div>
     <div className="credit-dialog-body">
       {loading && <p role="status">Loading credits…</p>}
       {data && <>
@@ -72,7 +73,7 @@ function WalletDialog({ target, onClose, onLoaded, onChanged }: {
         {!target && <><button className="primary-button" type="button" onClick={() => setContact(true)}>Add credits</button>{contact && <p className="credit-contact">For more credits, please contact <a href="https://in.linkedin.com/in/koshanqari" target="_blank" rel="noopener noreferrer">Koshan Qari on LinkedIn</a>.</p>}</>}
         {adminData && <form className="credit-admin-form" aria-label="Manage AI credits" onSubmit={submit}>
           <fieldset disabled={busy || loading} className="admin-create-fields">
-            <div className="field"><label htmlFor={id + "-action"}>Action</label><select id={id + "-action"} value={action} onChange={event => { setAction(event.target.value); setNotice(""); }}><option value="topup">Add credits</option><option value="refund">Refund credits</option><option value="pricing">Change multiplier</option></select></div>
+            {adminMode === "credits" && <div className="field"><label htmlFor={id + "-action"}>Action</label><select id={id + "-action"} value={action} onChange={event => { setAction(event.target.value); setNotice(""); }}><option value="topup">Add credits</option><option value="refund">Refund credits</option></select></div>}
             {action === "pricing" ? <div className="field"><label htmlFor={id + "-rate"}>Multiplier</label><input key={adminData.multiplier} id={id + "-rate"} name="multiplier" type="number" min=".1" max="10" step=".01" required defaultValue={adminData.multiplier} /><p className="field-help">From 0.10× to 10×. Pending replies keep their original rate.</p></div> : <div className="field"><label htmlFor={id + "-amount"}>Credits to add</label><input id={id + "-amount"} name="amount" type="number" min=".01" max="100000" step=".01" required /></div>}
             {action === "topup" && <div className="field"><label htmlFor={id + "-paid"}>Money received (₹, optional)</label><input id={id + "-paid"} name="paid" type="number" min="0" max="100000" step=".01" /></div>}
             <div className="field"><label htmlFor={id + "-reason"}>Reason or payment reference</label><input id={id + "-reason"} name="reason" required maxLength={250} /></div>

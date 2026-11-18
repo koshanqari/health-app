@@ -2,7 +2,7 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { db, type DatabaseRow } from "../src/lib/db";
-import { administerCredits, creditCharge, creditSettings, migrateCredits, CreditError, getCreditDetails, refundUndeliveredReply, reserveCredits, settleCredits } from "../src/lib/credits";
+import { administerCredits, creditCharge, creditSettings, migrateCredits, getCreditDefaults, saveCreditDefaults, CreditError, getCreditDetails, refundUndeliveredReply, reserveCredits, settleCredits } from "../src/lib/credits";
 import { FoodAiError, requestFoodAi, type FoodAiSettings } from "../src/lib/food-ai";
 
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
@@ -189,6 +189,7 @@ test("signup default configuration validates rates and migration preserves exist
       assert.throws(() => creditSettings(), CreditError);
     }
     process.env.AI_DEFAULT_MULTIPLIER = "4.25";
+    const persisted = await getCreditDefaults();
     await connection.beginTransaction();
     await migrateCredits(connection);
     const [rows] = await connection.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [users[0].id]);
@@ -200,8 +201,8 @@ test("signup default configuration validates rates and migration preserves exist
     await connection.execute(`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
       VALUES ($1, 'Defaults fixture', $2, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, [freshId, `defaults-${freshId}@example.com`]);
     const [fresh] = await connection.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [freshId]);
-    assert.equal(Number(fresh[0].balanceCents), 7500);
-    assert.equal(fresh[0].multiplierHundred, 425);
+    assert.equal(Number(fresh[0].balanceCents), persisted.welcomeCredits * 100);
+    assert.equal(fresh[0].multiplierHundred, Math.round(persisted.multiplier * 100));
     // Roll back the temporary defaults so other signup tests keep their configured settings.
     await connection.rollback();
   } finally {
@@ -226,4 +227,44 @@ test("members see additions before the history limit while admin keeps usage and
   assert.equal(admin.transactions.length, 30);
   assert.ok(admin.transactions.some((item: { kind: string; amount: number }) => item.kind === "usage" && item.amount < 0));
   assert.equal(admin.balance, member.balance);
+});
+
+test("only admin can edit signup defaults; new signups use changes immediately and stale saves cannot overwrite them", async () => {
+  const url = base + "/api/admin/credit-defaults";
+  const original = await getCreditDefaults();
+  const update = (body: unknown, cookie = users[1].cookie, origin = base) => fetch(url, { method: "PATCH", headers: { Cookie: cookie, Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const input = { welcomeCredits: 75, multiplier: 4.25, revision: original.revision };
+  let freshId: string | undefined;
+  try {
+    assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(url, { headers: { Cookie: users[0].cookie } })).status, 403);
+    assert.equal((await update(input, "")).status, 401);
+    assert.equal((await update(input, users[0].cookie)).status, 403);
+    assert.equal((await update(input, users[1].cookie, "https://outside.example")).status, 403);
+    for (const invalid of [{ multiplier: 0 }, { multiplier: 10.01 }, { multiplier: 1.111 }, { welcomeCredits: -1 }, { welcomeCredits: 1001 }, { welcomeCredits: "50" }, { unexpected: 1 }]) {
+      assert.equal((await update({ ...input, ...invalid })).status, 400);
+    }
+    await assert.rejects(saveCreditDefaults(users[0].id, input), error => error instanceof CreditError && error.status === 403);
+    assert.equal((await update(input)).status, 200);
+    assert.equal((await update({ ...input, multiplier: 2 })).status, 409);
+    const live = await (await fetch(url, { headers: { Cookie: users[1].cookie } })).json();
+    assert.equal(live.welcomeCredits, 75); assert.equal(live.multiplier, 4.25);
+    const signup = await fetch(base + "/api/auth/sign-up/email", { method: "POST", headers: { Origin: base, "Content-Type": "application/json", "X-Forwarded-For": `198.28.1.${Math.floor(Math.random() * 240) + 1}` }, body: JSON.stringify({ name: "Updated defaults fixture", email: `new-defaults-${randomUUID()}@example.com`, password: randomUUID() + "!" }) });
+    assert.equal(signup.status, 200);
+    freshId = (await signup.json()).user.id;
+    const fresh = await getCreditDetails(freshId!);
+    assert.equal(fresh.balance, 75); assert.equal(fresh.multiplier, 4.25);
+    assert.equal(fresh.transactions.filter(row => row.kind === "welcome").length, 1);
+    const existing = await getCreditDetails(users[0].id);
+    assert.equal(existing.balance, 20); assert.equal(existing.multiplier, 2);
+    // Migration reruns must retain the admin's selected defaults.
+    const connection = await db.getConnection();
+    try { await connection.beginTransaction(); await migrateCredits(connection); await connection.commit(); }
+    catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+    assert.equal((await getCreditDefaults()).multiplier, 4.25);
+  } finally {
+    if (freshId) await db.execute('DELETE FROM "user" WHERE id = $1', [freshId]);
+    const latest = await getCreditDefaults();
+    await saveCreditDefaults(users[1].id, { ...original, revision: latest.revision });
+  }
 });

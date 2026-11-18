@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import type { DatabaseRow } from "../src/lib/db";
 import { db } from "../src/lib/db";
 import sharp from "sharp";
+import { getCreditDefaults, saveCreditDefaults } from "../src/lib/credits";
 import { sendFoodChat } from "../src/lib/food-chat";
 import type { FoodAiSettings } from "../src/lib/food-ai";
 import { suggestedFoodGoals, suggestedMacros } from "../src/lib/food-goals";
@@ -988,15 +989,19 @@ test("admin credit controls add an offline top-up, change user pricing and show 
   await expect(wallet.locator(".credit-total strong")).toHaveText((initial + 50).toFixed(2));
   await expect(wallet.locator(".credit-history")).toContainText("Offline payment reference fixture");
   await expect(wallet.getByLabel("Credits to add", { exact: true })).toHaveValue("");
-  await wallet.getByLabel("Action", { exact: true }).selectOption("pricing");
-  await wallet.getByLabel("Multiplier", { exact: true }).fill("3.5");
-  await wallet.getByLabel("Reason or payment reference", { exact: true }).fill("Updated personal rate");
-  await wallet.getByRole("button", { name: "Save multiplier", exact: true }).click();
-  await expect(wallet.locator(".credit-facts")).toContainText("3.50×");
-  await expect(wallet.locator(".credit-history")).toContainText("Updated personal rate");
-  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-credits.png`, fullPage: true });
+  await expect(wallet.getByLabel("Action", { exact: true }).locator("option")).toHaveCount(2);
   await wallet.getByRole("button", { name: "Close credits", exact: true }).click();
-  await expect(page.getByRole("button", { name: `Manage credits: ${memberEmail}`, exact: true })).toContainText("3.50×");
+  await page.getByRole("button", { name: `Change multiplier: ${memberEmail}`, exact: true }).click();
+  const pricing = page.getByRole("dialog", { name: /Multiplier ·/ });
+  await expect(pricing.getByLabel("Action", { exact: true })).toHaveCount(0);
+  await pricing.getByLabel("Multiplier", { exact: true }).fill("3.5");
+  await pricing.getByLabel("Reason or payment reference", { exact: true }).fill("Updated personal rate");
+  await pricing.getByRole("button", { name: "Save multiplier", exact: true }).click();
+  await expect(pricing.locator(".credit-facts")).toContainText("3.50×");
+  await expect(pricing.locator(".credit-history")).toContainText("Updated personal rate");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-credits.png`, fullPage: true });
+  await pricing.getByRole("button", { name: "Close credits", exact: true }).click();
+  await expect(page.getByRole("button", { name: `Change multiplier: ${memberEmail}`, exact: true })).toContainText("3.50×");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // Leave later scenarios at the default rate.
   await db.execute('UPDATE "creditWallet" SET "multiplierHundred" = 200 WHERE "userId" = $1', [memberId]);
@@ -1104,4 +1109,32 @@ test("a new release offers a session-preserving update and protects in-flight re
   await expect(page).toHaveURL(/\/app\?tab=chat$/);
   await expect(page.getByLabel("Your message", { exact: true })).toBeEnabled();
   expect((await (await page.request.get("/api/account")).json()).user.id).toBe(originalUser);
+});
+
+test("admin can save new account defaults and reload without changing an existing wallet", async ({ page }, info) => {
+  const original = await getCreditDefaults();
+  const [admins] = await db.execute<DatabaseRow[]>('SELECT id FROM "user" WHERE email = $1', [adminEmail]);
+  const [before] = await db.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [memberId]);
+  try {
+    await page.goto("/admin");
+    await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const form = page.getByRole("form", { name: "New account defaults", exact: true });
+    await expect(form.getByLabel("Welcome credits", { exact: true })).toHaveValue(String(original.welcomeCredits));
+    await form.getByLabel("Welcome credits", { exact: true }).fill("65");
+    await form.getByLabel("Default multiplier", { exact: true }).fill("2.75");
+    await form.getByRole("button", { name: "Save defaults", exact: true }).click();
+    await expect(form.getByRole("status")).toContainText("New signups will use these values");
+    await page.reload();
+    await expect(form.getByLabel("Welcome credits", { exact: true })).toHaveValue("65");
+    await expect(form.getByLabel("Default multiplier", { exact: true })).toHaveValue("2.75");
+    const [after] = await db.execute<DatabaseRow[]>('SELECT "balanceCents", "multiplierHundred" FROM "creditWallet" WHERE "userId" = $1', [memberId]);
+    expect(after).toEqual(before);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-signup-defaults.png`, fullPage: true });
+  } finally {
+    const latest = await getCreditDefaults();
+    await saveCreditDefaults(admins[0].id, { ...original, revision: latest.revision });
+  }
 });

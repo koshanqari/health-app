@@ -36,7 +36,18 @@ export function creditCharge(costMicros: number, fxCents: number, multiplierHund
   return Number((BigInt(costMicros) * BigInt(fxCents) * BigInt(multiplierHundred) + 99_999_999n) / 100_000_000n);
 }
 export async function migrateCredits(connection: DatabaseConnection) {
-  const { welcomeCents, defaultMultiplierHundred } = creditSettings();
+  const seed = creditSettings();
+  await connection.execute(`CREATE TABLE IF NOT EXISTS "creditDefaults" (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    "welcomeCents" INTEGER NOT NULL CHECK ("welcomeCents" BETWEEN 0 AND 100000),
+    "multiplierHundred" INTEGER NOT NULL CHECK ("multiplierHundred" BETWEEN 10 AND 1000),
+    revision INTEGER NOT NULL DEFAULT 1,
+    "updatedBy" TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+    "updatedAt" TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+  )`);
+  await connection.execute('INSERT INTO "creditDefaults" (id, "welcomeCents", "multiplierHundred") VALUES (1, $1, $2) ON CONFLICT DO NOTHING', [seed.welcomeCents, seed.defaultMultiplierHundred]);
+  const [defaults] = await connection.execute<DatabaseRow[]>('SELECT "welcomeCents", "multiplierHundred" FROM "creditDefaults" WHERE id = 1 FOR SHARE');
+  const welcomeCents = Number(defaults[0].welcomeCents), defaultMultiplierHundred = Number(defaults[0].multiplierHundred);
   await connection.execute(`CREATE TABLE IF NOT EXISTS "creditWallet" (
     "userId" TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
     "balanceCents" BIGINT NOT NULL DEFAULT 0 CHECK ("balanceCents" BETWEEN 0 AND 1000000000000),
@@ -66,11 +77,13 @@ export async function migrateCredits(connection: DatabaseConnection) {
   await connection.execute('CREATE INDEX IF NOT EXISTS credit_history ON "creditLedger" ("userId", "createdAt" DESC, id DESC)');
   await connection.execute('CREATE INDEX IF NOT EXISTS credit_pending_holds ON "foodAiUsage" ("userId", "createdAt") WHERE "creditHoldActive"');
   await connection.execute(`CREATE OR REPLACE FUNCTION daywell_welcome_credits() RETURNS TRIGGER AS $$
+    DECLARE defaults "creditDefaults"%ROWTYPE;
     BEGIN
-      INSERT INTO "creditWallet" ("userId", "balanceCents", "multiplierHundred") VALUES (NEW.id, ${welcomeCents}, ${defaultMultiplierHundred}) ON CONFLICT DO NOTHING;
+      SELECT * INTO STRICT defaults FROM "creditDefaults" WHERE id = 1 FOR SHARE;
+      INSERT INTO "creditWallet" ("userId", "balanceCents", "multiplierHundred") VALUES (NEW.id, defaults."welcomeCents", defaults."multiplierHundred") ON CONFLICT DO NOTHING;
       IF FOUND THEN
         INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason)
-        VALUES (gen_random_uuid()::text, NEW.id, 'welcome', ${welcomeCents}, ${welcomeCents}, 'Welcome credits');
+        VALUES (gen_random_uuid()::text, NEW.id, 'welcome', defaults."welcomeCents", defaults."welcomeCents", 'Welcome credits');
       END IF;
       RETURN NEW;
     END; $$ LANGUAGE plpgsql`);
@@ -81,6 +94,31 @@ export async function migrateCredits(connection: DatabaseConnection) {
   ) INSERT INTO "creditLedger" (id, "userId", kind, "amountCents", "balanceAfterCents", reason)
     SELECT gen_random_uuid()::text, "userId", 'welcome', ${welcomeCents}, ${welcomeCents}, 'Welcome credits' FROM fresh`);
 }
+export type CreditDefaults = { welcomeCredits: number; multiplier: number; revision: number };
+export async function getCreditDefaults(): Promise<CreditDefaults> {
+  const [rows] = await db.execute<DatabaseRow[]>('SELECT "welcomeCents", "multiplierHundred", revision FROM "creditDefaults" WHERE id = 1');
+  if (!rows[0]) throw new CreditError(503, "CREDIT_DEFAULTS", "New account defaults are unavailable.");
+  return { welcomeCredits: rows[0].welcomeCents / 100, multiplier: rows[0].multiplierHundred / 100, revision: rows[0].revision };
+}
+export async function saveCreditDefaults(actorId: string, value: unknown): Promise<CreditDefaults> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new CreditError(400, "CREDIT_INPUT", "Check the new account defaults.");
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some(key => !["welcomeCredits", "multiplier", "revision"].includes(key)) || !Number.isSafeInteger(input.revision) || Number(input.revision) < 1) throw new CreditError(400, "CREDIT_INPUT", "Check the new account defaults.");
+  const welcomeCents = decimal(input.welcomeCredits, 0, 1000, "welcome credits"), multiplierHundred = decimal(input.multiplier, .1, 10, "multiplier");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [actors] = await connection.execute<DatabaseRow[]>('SELECT role FROM "user" WHERE id = $1 FOR SHARE', [actorId]);
+    if (actors[0]?.role !== "admin") throw new CreditError(403, "CREDIT_ADMIN", "Administrator access required.");
+    const [rows] = await connection.execute<DatabaseRow[]>(`UPDATE "creditDefaults" SET "welcomeCents" = $1, "multiplierHundred" = $2,
+      revision = revision + 1, "updatedBy" = $3, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = 1 AND revision = $4 RETURNING revision`, [welcomeCents, multiplierHundred, actorId, input.revision]);
+    if (!rows.length) throw new CreditError(409, "CREDIT_DEFAULTS_CHANGED", "These defaults changed in another session. Reload the defaults and try again.");
+    await connection.commit();
+    return { welcomeCredits: welcomeCents / 100, multiplier: multiplierHundred / 100, revision: rows[0].revision };
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
+}
+
 async function lockWallet(connection: DatabaseConnection, userId: string) {
   const [rows] = await connection.execute<DatabaseRow[]>('SELECT * FROM "creditWallet" WHERE "userId" = $1 FOR UPDATE', [userId]);
   if (!rows.length) throw new CreditError(404, "CREDIT_WALLET", "This credit account was not found.");

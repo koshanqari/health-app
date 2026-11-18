@@ -1,7 +1,8 @@
-import { creditSettings } from "@/lib/credits";
+import { getCreditDefaults } from "@/lib/credits";
 import type { DatabaseRow } from "@/lib/db";
 import { getSession, requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
+import { CreditDefaultsForm } from "@/components/credit-defaults";
 import { AdminWorkspace } from "@/components/admin-workspace";
 import { AuthShell } from "@/components/auth-shell";
 import { AuthForm } from "@/components/auth-form";
@@ -14,10 +15,10 @@ export const metadata = { title: "Administration" };
 export default async function AdminPage() {
   if (!await getSession()) return <AuthShell mode="admin"><AuthForm mode="admin" /></AuthShell>;
   const admin = await requireAdmin();
-  const defaults = creditSettings();
+  const defaults = await getCreditDefaults();
   const [profileRows] = await db.execute<DatabaseRow[]>('SELECT "avatarId" FROM "userProfile" WHERE "userId" = $1', [admin.id]);
   const [rows] = await db.execute<(DatabaseRow & Omit<DirectoryUser, "createdAt"> & { createdAt: Date })[]>(
-    "SELECT u.id, u.name, u.email, u.role, u.\"createdAt\", (COALESCE(w.\"balanceCents\" - w.\"heldCents\",0)::double precision / 100) AS credits, (COALESCE(w.\"multiplierHundred\",$1)::double precision / 100) AS multiplier FROM \"user\" u LEFT JOIN \"creditWallet\" w ON w.\"userId\" = u.id ORDER BY u.\"createdAt\" DESC LIMIT 100", [defaults.defaultMultiplierHundred],
+    "SELECT u.id, u.name, u.email, u.role, u.\"createdAt\", (COALESCE(w.\"balanceCents\" - w.\"heldCents\",0)::double precision / 100) AS credits, (COALESCE(w.\"multiplierHundred\",$1)::double precision / 100) AS multiplier FROM \"user\" u LEFT JOIN \"creditWallet\" w ON w.\"userId\" = u.id ORDER BY u.\"createdAt\" DESC LIMIT 100", [Math.round(defaults.multiplier * 100)],
   );
   const [counts] = await db.execute<DatabaseRow[]>(
     "SELECT COUNT(*)::integer AS total, SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::integer AS admins, SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END)::integer AS members FROM \"user\"",
@@ -49,7 +50,7 @@ export default async function AdminPage() {
             </div>
           ))}
         </dl>
-        <p className="account-note">New account defaults: {(defaults.welcomeCents / 100).toFixed(2)} credits and {(defaults.defaultMultiplierHundred / 100).toFixed(2)}× multiplier. These are a one-time welcome grant; existing accounts keep their balance and rate.</p>
+        <CreditDefaultsForm initial={defaults} />
         <UserDirectory users={users} currentUserId={admin.id} />
         <p className="account-note">Member meal and activity records stay out of this view.</p>
       </main>
