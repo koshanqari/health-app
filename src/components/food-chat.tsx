@@ -1,9 +1,11 @@
 "use client";
 
+import { ProfileProposal } from "./profile-proposal";
+import type { ProfileChange } from "@/lib/profile";
 import { useMemberFetch, useViewingAs } from "./member-view";
 
 import Link from "next/link";
-import { memo, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { UpdateGuard } from "./app-updates";
 import { CreditWallet } from "./credit-wallet";
 import { GoalForm } from "./food-goals";
@@ -99,11 +101,11 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
     const guard = (event: Event) => {
       const detail = (event as CustomEvent<UpdateGuard>).detail;
       detail.busy ||= busy || loading || preparing || !!state?.pending;
-      detail.dirty ||= !!text.trim() || photos.length > 0 || !!state?.draft || !!state?.goalDraft || !!review || !!goalReview;
+      detail.dirty ||= !!text.trim() || photos.length > 0 || !!state?.draft || !!state?.goalDraft || !!state?.profileDraft || !!review || !!goalReview;
     };
     window.addEventListener("daywell-update-guard", guard);
     return () => window.removeEventListener("daywell-update-guard", guard);
-  }, [busy, loading, preparing, state?.pending, state?.draft, state?.goalDraft, text, photos.length, review, goalReview]);
+  }, [busy, loading, preparing, state?.pending, state?.draft, state?.goalDraft, state?.profileDraft, text, photos.length, review, goalReview]);
 
   useEffect(() => {
     if (!active || !state || busy || loading || preparing || state.pending) return;
@@ -185,6 +187,16 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   const creditLimited = !!state?.quota.credits && !state.quota.credits.canSend;
   const limited = creditLimited || !!state && (state.quota.remainingToday < 1 || state.quota.remainingBudgetUsd < .01);
   const canSend = !viewingAs && !!state?.quota.configured && !waiting && !loading && !preparing && !limited && (!!text.trim() || photos.length > 0);
+  const saveProfileProposal = useCallback(async (draftId: string, profile: ProfileChange) => {
+    if (viewingAs) throw new Error("Viewing as a user is read-only.");
+    setBusy(true);
+    try {
+      const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId, profile }) });
+      const next = await response.json();
+      if (!response.ok) throw new Error(next.message || "We couldn’t save your profile.");
+      apply(next); window.dispatchEvent(new Event("profile-saved"));
+    } finally { setBusy(false); }
+  }, [fetch, viewingAs]);
   const messages = state?.messages ?? [];
   const visibleOptimistic = optimistic && !messages.some(message => message.id === optimistic.id);
 
@@ -194,9 +206,10 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
       <div className="chat-thread" ref={thread} role="log" aria-label="Conversation with Kay" aria-live="polite" onScroll={() => { const element = thread.current; if (element) scrollToEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
         {loading && <p className="chat-status" role="status">Loading your conversation…</p>}
         {state && messages.length === 0 && !visibleOptimistic && <div className="chat-empty"><h2>Hi, I’m Kay.</h2><p>Start with a message or a few photos.</p><div className="chat-suggestions">{["I had poha and chai for breakfast", "Show today’s logged totals"].map(example => <button type="button" disabled={!!viewingAs} key={example} onClick={() => { setText(example); input.current?.focus(); }}>{example}</button>)}</div></div>}
-        {messages.map(message => <ChatMessage key={message.id} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting || !!viewingAs} onReview={setReview} />)}
+        {messages.map(message => <ChatMessage key={message.id} activeProfileDraft={state?.profileDraft?.draftId} onSaveProfile={saveProfileProposal} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting || !!viewingAs} onReview={setReview} />)}
         {state?.draft && !messages.some(message => message.id === state.draft!.draftId) && <ChatMessage message={{ id: state.draft.draftId, requestId: state.draft.draftId, sequence: 0, role: "assistant", content: "Your meal draft is still ready to review.", createdAt: "", payload: { state: "ready", draft: state.draft } }} activeDraft={state.draft.draftId} busy={waiting || !!viewingAs} onReview={setReview} />}
         {state?.goalDraft && !messages.some(message => message.id === state.goalDraft!.draftId) && <ChatMessage message={{ id: state.goalDraft.draftId, requestId: state.goalDraft.draftId, sequence: 0, role: "assistant", content: "Your goal proposal is still ready to review.", createdAt: "", payload: { state: "ready", goalDraft: state.goalDraft } }} activeGoalDraft={state.goalDraft.draftId} busy={waiting || !!viewingAs} onReview={setReview} onReviewGoals={setGoalReview} />}
+        {state?.profileDraft && !messages.some(message => message.id === state.profileDraft!.draftId) && <ChatMessage activeProfileDraft={state.profileDraft.draftId} onSaveProfile={saveProfileProposal} message={{ id: state.profileDraft.draftId, requestId: state.profileDraft.draftId, sequence: 0, role: "assistant", content: "Your profile update is ready to review.", createdAt: "", payload: { state: "ready", profileDraft: state.profileDraft } }} busy={waiting || !!viewingAs} onReview={setReview} />}
         {visibleOptimistic && <ChatMessage message={optimistic} busy activeDraft={undefined} onReview={setReview} />}
         {waiting && <p className="chat-typing" role="status">Working on your reply… <span>You can switch tabs.</span></p>}
       </div>
@@ -227,7 +240,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   </section>;
 }
 
-const ChatMessage = memo(function ChatMessage({ message, activeDraft, activeGoalDraft, busy, onReview, onReviewGoals }: { message: FoodChatMessage; activeDraft?: string; activeGoalDraft?: string; onReviewGoals?: (draft: FoodChatGoalDraft) => void; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
+const ChatMessage = memo(function ChatMessage({ message, activeDraft, activeGoalDraft, activeProfileDraft, onSaveProfile, busy, onReview, onReviewGoals }: { message: FoodChatMessage; activeProfileDraft?: string; onSaveProfile?: (id: string, changes: ProfileChange) => Promise<void>; activeDraft?: string; activeGoalDraft?: string; onReviewGoals?: (draft: FoodChatGoalDraft) => void; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
   const { payload } = message, draft = payload.draft, goalDraft = payload.goalDraft;
   const photoCount = payload.photoCount ?? (payload.hasPhoto ? 1 : 0);
   const mismatch = draft ? macroCalorieEstimate(draft) : null;
@@ -236,6 +249,7 @@ const ChatMessage = memo(function ChatMessage({ message, activeDraft, activeGoal
     <div className="chat-message-content"><p className="chat-text">{message.content}</p>
       {photoCount > 0 && <span className="chat-photo-label"><ComposerIcon /> {photoCount === 1 ? "Photo attached" : `${photoCount} photos attached`}{photoCount > 1 && payload.photoMode === "angles" ? " · Same food, different angles" : photoCount > 1 && payload.photoMode === "meal" ? " · Different dishes" : ""}</span>}
       {payload.state === "failed" && <p className="chat-failed">Reply interrupted. Resend your message to try again.</p>}
+      {payload.profileDraft && <ProfileProposal key={payload.profileDraft.draftId + payload.state} draft={payload.profileDraft} active={activeProfileDraft === payload.profileDraft.draftId} saved={payload.state === "logged"} busy={busy} onSave={onSaveProfile ?? (async () => {})} />}
       {goalDraft && <div className="chat-food-draft chat-goal-draft" aria-label={payload.state === "logged" ? "Saved goals" : "Goal proposal"}>
         <div className="chat-draft-heading"><h3>Daily food goals</h3><span>{payload.state === "logged" ? "Saved" : "Proposal"}</span></div>
         <dl className="chat-nutrition">{goalNutrients.map(key => <div key={key}><dt>{key === "calories" ? "Calories" : key[0].toUpperCase() + key.slice(1)}</dt><dd>{number(goalDraft.goals[key].min)}–{number(goalDraft.goals[key].max)} <small>{key === "calories" ? "kcal" : "g"}</small></dd></div>)}</dl>

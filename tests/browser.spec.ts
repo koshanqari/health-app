@@ -704,7 +704,7 @@ test("profile edits persist and return to the same tab without losing journal or
   await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Test Member");
   await expect(profile.getByLabel("Email", { exact: true })).toHaveValue(memberEmail);
   await expect(profile.getByLabel("Email", { exact: true })).toHaveJSProperty("readOnly", true);
-  await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("");
+  await expect(profile.getByLabel("Age (years)", { exact: true })).toHaveValue("");
   await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("");
   await expect(profile.getByLabel("Height (cm)", { exact: true })).toHaveValue("");
   await expect(profile.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
@@ -714,9 +714,10 @@ test("profile edits persist and return to the same tab without losing journal or
     expect(bounds.width).toBe(await page.evaluate(() => innerWidth));
   }
   await profile.getByLabel("Name", { exact: true }).fill("Jordan Bloom");
-  await profile.getByLabel("Date of birth", { exact: true }).fill("1992-02-29");
+  await profile.getByLabel("Age (years)", { exact: true }).fill("34");
   await profile.getByLabel("Sex", { exact: true }).selectOption("intersex");
   await profile.getByLabel("Height (cm)", { exact: true }).fill("175.5");
+  await profile.getByLabel("Weight (kg)", { exact: true }).fill("78.5");
   await profile.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(profile.getByRole("status")).toHaveText("Profile saved.");
   await expect(page.locator("#main-content h1").filter({ hasText: "Hi, Jordan." })).toHaveCount(1);
@@ -732,9 +733,10 @@ test("profile edits persist and return to the same tab without losing journal or
   await navigation.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Hi, Jordan.", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Open profile", exact: true }).click();
-  await expect(profile.getByLabel("Date of birth", { exact: true })).toHaveValue("1992-02-29");
+  await expect(profile.getByLabel("Age (years)", { exact: true })).toHaveValue("34");
   await expect(profile.getByLabel("Sex", { exact: true })).toHaveValue("intersex");
   await expect(profile.getByLabel("Height (cm)", { exact: true })).toHaveValue("175.5");
+  await expect(profile.getByLabel("Weight (kg)", { exact: true })).toHaveValue("78.5");
   await page.goBack();
   await expect(profile).not.toBeVisible();
   await page.goForward();
@@ -1226,4 +1228,47 @@ test("admin can view a member read-only and exit without replacing either accoun
   await banner.getByRole("button", { name: "Exit view", exact: true }).click();
   await expect(page).toHaveURL(/\/admin$/);
   expect((await (await page.request.get("/api/account")).json()).user.id).toBe(admin.id);
+});
+
+
+test("Kay proposes editable age, sex, height and weight updates and saves only after confirmation", async ({ page }, info) => {
+  await db.execute('DELETE FROM "userProfile" WHERE "userId" = $1', [memberId]);
+  let requestCount = 0;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const context = JSON.parse(body.contents[0].parts[0].text.split("Application context (saved records are authoritative):\n")[1].split("\nLatest user message:")[0]);
+      requestCount++;
+      if (requestCount > 1) expect(context.userProfile.weightKg).toBe(77.5);
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "profile", reply: "Please review your profile update.", draft: null, goalDraft: null, profileDraft: { changes: requestCount === 1 ? { age: 28, sex: "male", heightCm: 175, weightKg: 78 } : { weightKg: 76 }, assumptions: "Details you supplied." } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+    } });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  await page.getByLabel("Your message", { exact: true }).fill("I am 28, male, 175 cm and 78 kg");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const proposal = page.getByRole("form", { name: "Profile update", exact: true });
+  await expect(proposal.getByLabel("Weight (kg)", { exact: true })).toHaveValue("78");
+  let profile = (await (await page.request.get("/api/account")).json()).user;
+  expect(profile.weightKg).toBe(null); expect(profile.age).toBe(null);
+  await proposal.getByLabel("Weight (kg)", { exact: true }).fill("77.5");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-profile-proposal.png`, fullPage: true });
+  await proposal.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(page.getByText("Profile saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open profile", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Profile", exact: true });
+  await expect(dialog.getByLabel("Age (years)", { exact: true })).toHaveValue("28");
+  await expect(dialog.getByLabel("Weight (kg)", { exact: true })).toHaveValue("77.5");
+  await expect(dialog.getByLabel("Date of birth", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Back to app", exact: true }).click();
+  await page.getByLabel("Your message", { exact: true }).fill("My weight is now 76 kg");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const latest = page.getByRole("form", { name: "Profile update", exact: true }).filter({ has: page.getByRole("button", { name: "Save profile", exact: true }) });
+  await expect(latest.getByLabel("Weight (kg)", { exact: true })).toHaveValue("76");
+  await expect(latest.getByLabel("Age (years)", { exact: true })).toHaveCount(0);
+  await latest.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(page.getByText("Profile saved.", { exact: true })).toHaveCount(2);
+  profile = (await (await page.request.get("/api/account")).json()).user;
+  expect(profile.weightKg).toBe(76); expect(profile.age).toBe(28); expect(profile.heightCm).toBe(175); expect(profile.sex).toBe("male");
 });

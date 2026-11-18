@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { DatabaseRow } from "../src/lib/db";
 import { db } from "../src/lib/db";
-import { confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "../src/lib/food-chat";
+import { confirmFoodChatProfile, confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "../src/lib/food-chat";
 import { FoodAiError, type FoodAiOptions, type FoodAiSettings } from "../src/lib/food-ai";
 import { suggestedFoodGoals } from "../src/lib/food-goals";
 import { MAX_CHAT_PHOTO_BYTES, MAX_CHAT_PHOTOS, parseFood } from "../src/lib/food";
@@ -298,26 +298,24 @@ test("Kay receives current owner height, sex and local age without exact DOB or 
     const data = JSON.parse(prompt.split("\nLatest user message:\n")[0].split("\n").slice(1).join("\n"));
     contexts.push(data);
     assert.equal(prompt.includes("dateOfBirth"), false);
-    assert.deepEqual(Object.keys(data.userProfile).sort(), ["age", "heightCm", "sex"]);
+    assert.deepEqual(Object.keys(data.userProfile).sort(), ["age", "ageUpdatedAt", "heightCm", "sex", "weightKg", "weightUpdatedAt"]);
     return mock({ intent: "reply", reply: "I can use your saved profile details.", draft: null })(url, init);
   }) as typeof fetch };
   try {
     await send(0, "What profile details can you see?", options);
-    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
-    for (const birthday of ["2000-01-01", "2000-12-31"]) {
-      await db.execute('INSERT INTO "userProfile" ("userId", "dateOfBirth", sex, "heightCm", "avatarId") VALUES ($1, $2::date, $3, $4, $5) ON CONFLICT ("userId") DO UPDATE SET "dateOfBirth" = EXCLUDED."dateOfBirth", sex = EXCLUDED.sex, "heightCm" = EXCLUDED."heightCm"', [users[0].id, birthday, "female", 175.5, "apple"]);
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, weightKg: null, sex: null, ageUpdatedAt: null, weightUpdatedAt: null });
+    for (const age of [25, 26]) {
+      await db.execute('INSERT INTO "userProfile" ("userId", age, sex, "heightCm", "weightKg", "avatarId") VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT ("userId") DO UPDATE SET age = EXCLUDED.age, sex = EXCLUDED.sex, "heightCm" = EXCLUDED."heightCm", "weightKg" = EXCLUDED."weightKg"', [users[0].id, age, "female", 175.5, 78.5, "apple"]);
       await send(0, "Check my current profile", options);
       const data = contexts.at(-1)!;
-      const today = data.localDateTime.slice(0, 10);
-      const age = Number(today.slice(0, 4)) - 2000 - (today.slice(5) < birthday.slice(5) ? 1 : 0);
-      assert.deepEqual(data.userProfile, { age, heightCm: 175.5, sex: "female" });
-      assert.equal(JSON.stringify(data).includes(birthday), false);
+      assert.deepEqual(data.userProfile, { age, heightCm: 175.5, weightKg: 78.5, sex: "female", ageUpdatedAt: null, weightUpdatedAt: null });
+      assert.equal("profileSnapshot" in data, false);
     }
     await send(1, "What profile details can you see?", options);
-    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
-    await db.execute('UPDATE "userProfile" SET sex = $1, "dateOfBirth" = NULL, "heightCm" = NULL WHERE "userId" = $2', ["prefer_not_to_say", users[0].id]);
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, weightKg: null, sex: null, ageUpdatedAt: null, weightUpdatedAt: null });
+    await db.execute('UPDATE "userProfile" SET sex = $1, age = NULL, "weightKg" = NULL, "heightCm" = NULL WHERE "userId" = $2', ["prefer_not_to_say", users[0].id]);
     await send(0, "Check my updated profile", options);
-    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, sex: null });
+    assert.deepEqual(contexts.at(-1)!.userProfile, { age: null, heightCm: null, weightKg: null, sex: null, ageUpdatedAt: null, weightUpdatedAt: null });
   } finally {
     await db.execute('DELETE FROM "userProfile" WHERE "userId" IN ($1, $2)', users.map(user => user.id));
   }
@@ -390,4 +388,49 @@ test("malformed AI goal ranges and dates fail without replacing a valid proposal
     await assert.rejects(send(0, "Revise targets", { ...options, fetcher: mock({ intent: "goals", reply: "Targets", draft: null, goalDraft }) }), code("AI_INVALID_RESPONSE"));
     assert.equal((await getFoodChat(users[0].id, options)).goalDraft!.draftId, first.draftId);
   }
+});
+
+
+test("Kay profile proposals wait for confirmation, allow edits and preserve unrelated profile fields", async () => {
+  await reset();
+  await db.execute('DELETE FROM "userProfile" WHERE "userId" = $1', [users[0].id]);
+  const profile = () => fetch(base + "/api/account", { headers: { Cookie: users[0].cookie } }).then(response => response.json()).then(body => body.user);
+  await fetch(base + "/api/account", { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ avatarId: "cat" }) });
+  const before = await profile();
+  const options = { settings: config(), fetcher: mock({ intent: "profile", reply: "Review these details and press Save profile.", draft: null, goalDraft: null, profileDraft: { changes: { age: 28, sex: "male", heightCm: 175, weightKg: 78 }, assumptions: "Details you supplied." } }) };
+  const state = await send(0, "I am 28, male, 175 cm and 78 kg", options);
+  assert.ok(state.profileDraft); assert.equal(state.draft, null); assert.equal(state.goalDraft, null);
+  assert.deepEqual(await profile(), before);
+  await assert.rejects(confirmFoodChatProfile(users[1].id, state.profileDraft.draftId, state.profileDraft.changes, options), error => error instanceof FoodAiError && error.status === 404);
+  await assert.rejects(confirmFoodChatProfile(users[0].id, state.profileDraft.draftId, { ...state.profileDraft.changes, role: "admin" }, options), error => error instanceof FoodAiError && error.status === 400);
+  const response = await fetch(base + "/api/food/chat", { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ draftId: state.profileDraft.draftId, profile: { ...state.profileDraft.changes, weightKg: 77.5 } }) });
+  assert.equal(response.status, 200);
+  const saved = await profile();
+  assert.equal(saved.age, 28); assert.equal(saved.sex, "male"); assert.equal(saved.heightCm, 175); assert.equal(saved.weightKg, 77.5);
+  assert.ok(saved.ageUpdatedAt); assert.ok(saved.weightUpdatedAt);
+  assert.equal(saved.avatarId, "cat"); assert.equal(saved.name, before.name); assert.equal(saved.email, before.email); assert.equal(saved.role, before.role);
+  assert.equal("dateOfBirth" in saved, false);
+  await confirmFoodChatProfile(users[0].id, state.profileDraft.draftId, state.profileDraft.changes, options);
+  assert.equal((await profile()).weightKg, 77.5);
+  assert.equal((await getFoodChat(users[0].id, options)).profileDraft, null);
+  const other = await fetch(base + "/api/account", { headers: { Cookie: users[1].cookie } }).then(response => response.json());
+  assert.equal(other.user.weightKg, null);
+});
+
+test("weight-only proposals retain other fields, supersede older drafts and reject stale profile snapshots", async () => {
+  await reset();
+  const options = { settings: config(), fetcher: mock({ intent: "profile", reply: "Review your weight update.", draft: null, goalDraft: null, profileDraft: { changes: { weightKg: 76 }, assumptions: "New weight supplied." } }) };
+  const first = await send(0, "My weight is now 76 kg", options);
+  assert.deepEqual(Object.keys(first.profileDraft!.changes), ["weightKg"]);
+  const second = await send(0, "Yes, update my weight", options);
+  await assert.rejects(confirmFoodChatProfile(users[0].id, first.profileDraft!.draftId, { weightKg: 76 }, options), code("CHAT_DRAFT_CHANGED"));
+  await fetch(base + "/api/account", { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ weightKg: 80 }) });
+  await assert.rejects(confirmFoodChatProfile(users[0].id, second.profileDraft!.draftId, { weightKg: 76 }, options), error => error instanceof FoodAiError && error.status === 409);
+  let profile = (await (await fetch(base + "/api/account", { headers: { Cookie: users[0].cookie } })).json()).user;
+  assert.equal(profile.weightKg, 80);
+  const third = await send(0, "Set my weight to 76 kg instead", options);
+  await fetch(base + "/api/account", { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ heightCm: 180 }) });
+  await confirmFoodChatProfile(users[0].id, third.profileDraft!.draftId, { weightKg: 76 }, options);
+  profile = (await (await fetch(base + "/api/account", { headers: { Cookie: users[0].cookie } })).json()).user;
+  assert.equal(profile.weightKg, 76); assert.equal(profile.heightCm, 180); assert.equal(profile.age, 28); assert.equal(profile.sex, "male");
 });

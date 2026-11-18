@@ -1,5 +1,6 @@
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/lib/auth";
+import { migrateProfileDetails } from "../src/lib/profile-store";
 import { migrateAdminViews } from "../src/lib/admin-view";
 import { migrateCredits } from "../src/lib/credits";
 import { bootstrapAdmin } from "../src/lib/admin";
@@ -24,6 +25,7 @@ try {
       CHECK ("avatarId" IN ('apple', 'sprout', 'cat', 'bear', 'bunny', 'panda'))`);
     await connection.execute(`ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "heightCm" NUMERIC(4,1)
       CHECK ("heightCm" > 0 AND "heightCm" <= 300)`);
+    await migrateProfileDetails(connection);
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS "foodGoal" (
         "userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,

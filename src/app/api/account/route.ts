@@ -1,21 +1,20 @@
 import { getMemberSession } from "@/lib/session";
-import { db, type DatabaseRow } from "@/lib/db";
+import { db } from "@/lib/db";
 import { trustedAppOrigins } from "@/lib/app-origins";
-import { parseProfile, type UserProfile } from "@/lib/profile";
+import { readProfile, saveProfileChange, ProfileUpdateError } from "@/lib/profile-store";
 
 export const runtime = "nodejs";
 const response = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const unavailable = () => response({ message: "We couldn’t reach your profile. Please try again." }, 503);
-const selectProfile = `SELECT u.id, u.name, u.email, u.role, to_char(p."dateOfBirth", 'YYYY-MM-DD') AS "dateOfBirth", p.sex, p."avatarId", p."heightCm"::double precision AS "heightCm"
-  FROM "user" u LEFT JOIN "userProfile" p ON p."userId" = u.id WHERE u.id = $1`;
+
 
 export async function GET(request: Request) {
   const session = await getMemberSession(request);
   if (!session) return response({ message: "Sign in to continue." }, 401);
   try {
-    const [rows] = await db.execute<DatabaseRow[]>(selectProfile, [session.user.id]);
-    return rows.length ? response({ user: rows[0] as UserProfile }) : response({ message: "Sign in to continue." }, 401);
-  } catch { return unavailable(); }
+    const user = await readProfile(db, session.user.id);
+    return user ? response({ user }) : response({ message: "Sign in to continue." }, 401);
+  } catch (error) { return error instanceof ProfileUpdateError ? response({ message: error.message }, error.status) : unavailable(); }
 }
 
 export async function PATCH(request: Request) {
@@ -35,16 +34,10 @@ export async function PATCH(request: Request) {
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
-      const [rows] = await connection.execute<DatabaseRow[]>(selectProfile + " FOR UPDATE OF u", [session.user.id]);
-      if (!rows.length) { await connection.rollback(); return response({ message: "Sign in to continue." }, 401); }
-      let profile;
-      try { profile = parseProfile(data, rows[0] as UserProfile); }
-      catch (error) { await connection.rollback(); return response({ message: error instanceof Error ? error.message : "Check your profile details." }, 400); }
-      await connection.execute('UPDATE "user" SET name = $1, "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\') WHERE id = $2', [profile.name, session.user.id]);
-      await connection.execute('INSERT INTO "userProfile" ("userId", "dateOfBirth", sex, "avatarId", "heightCm") VALUES ($1, $2::date, $3, $4, $5) ON CONFLICT ("userId") DO UPDATE SET "dateOfBirth" = EXCLUDED."dateOfBirth", sex = EXCLUDED.sex, "avatarId" = EXCLUDED."avatarId", "heightCm" = EXCLUDED."heightCm", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')', [session.user.id, profile.dateOfBirth, profile.sex, profile.avatarId, profile.heightCm]);
+      const user = await saveProfileChange(connection, session.user.id, data);
       await connection.commit();
-      return response({ user: { ...rows[0], ...profile } });
+      return response({ user });
     } catch (error) { await connection.rollback(); throw error; }
     finally { connection.release(); }
-  } catch { return unavailable(); }
+  } catch (error) { return error instanceof ProfileUpdateError ? response({ message: error.message }, error.status) : unavailable(); }
 }
