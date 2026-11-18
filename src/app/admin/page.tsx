@@ -1,7 +1,8 @@
-import { getCreditDefaults } from "@/lib/credits";
+import { creditSettings, getCreditDefaults } from "@/lib/credits";
 import type { DatabaseRow } from "@/lib/db";
 import { getSession, requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
+import { AdminDocs } from "@/components/admin-docs";
 import { CreditDefaultsForm } from "@/components/credit-defaults";
 import { AdminWorkspace } from "@/components/admin-workspace";
 import { AuthShell } from "@/components/auth-shell";
@@ -37,8 +38,8 @@ export default async function AdminPage() {
   ];
 
   return (
-    <AdminWorkspace name={admin.name} avatarId={(profileRows[0]?.avatarId ?? null) as ProfileAvatarId | null}>
-      <main id="main-content" className="workspace-main admin-main">
+    <AdminWorkspace name={admin.name} avatarId={(profileRows[0]?.avatarId ?? null) as ProfileAvatarId | null} docs={<AdminDocs billingRate={creditSettings().fxCents / 100} />}>
+      <>
         <p className="eyebrow">The people behind Daywell</p>
         <h1>Hello, {admin.name.trim().split(/\s+/)[0]}.</h1>
         <p className="page-subtitle">A little care for your Daywell community.</p>
@@ -53,7 +54,7 @@ export default async function AdminPage() {
         <CreditDefaultsForm initial={defaults} />
         <UserDirectory users={users} currentUserId={admin.id} />
         <p className="account-note">Member meal and activity records stay out of this view.</p>
-      </main>
+      </>
     </AdminWorkspace>
   );
 }

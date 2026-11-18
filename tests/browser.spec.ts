@@ -1138,3 +1138,36 @@ test("admin can save new account defaults and reload without changing an existin
     await saveCreditDefaults(admins[0].id, { ...original, revision: latest.revision });
   }
 });
+
+
+test("admin sidebar opens cost docs, supports direct links and preserves unsaved defaults between tabs", async ({ page }, info) => {
+  await page.goto("/admin");
+  await page.getByLabel("Email address", { exact: true }).fill(adminEmail);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const navigation = page.getByRole("navigation", { name: "Administration", exact: true });
+  await expect(navigation.getByRole("link", { name: "Community", exact: true })).toHaveAttribute("aria-current", "page");
+  const form = page.getByRole("form", { name: "New account defaults", exact: true });
+  await form.getByLabel("Welcome credits", { exact: true }).fill("77");
+  const requests: string[] = [];
+  page.on("request", request => { if (new URL(request.url()).pathname === "/admin") requests.push(request.url()); });
+  await navigation.getByRole("link", { name: "Docs", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\?tab=docs$/);
+  await expect(page.getByRole("heading", { name: "Cost calculation", exact: true })).toBeVisible();
+  await expect(form).toBeHidden();
+  const docs = page.getByRole("article", { name: "Cost calculation", exact: true });
+  await expect(docs).toContainText("36 successful production requests");
+  await expect(docs.getByRole("row", { name: "Input API cost $0.25 ₹23.34", exact: true })).toBeVisible();
+  await expect(docs).toContainText("2,488.50");
+  await expect(docs).toContainText("₹100.00");
+  await expect(docs).toContainText("GST is not added separately");
+  expect(requests).toEqual([]);
+  await page.goBack();
+  await expect(form.getByLabel("Welcome credits", { exact: true })).toHaveValue("77");
+  await navigation.getByRole("link", { name: "Docs", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Cost calculation", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("aria-current", "page");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-cost-docs.png`, fullPage: true });
+});

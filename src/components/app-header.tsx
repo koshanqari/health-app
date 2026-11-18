@@ -35,7 +35,6 @@ export function AppShell({ name, avatarId = null, isAdmin = false, area = "membe
     <header className="app-header">
       <div className="app-brand"><Brand href={area === "member" ? "/app" : "/admin"} />{isAdmin && area === "admin" && <nav aria-label="Account areas">
         <Link href="/app" prefetch={false} className="nav-item">Your space</Link>
-        <Link href="/admin" className="nav-item active" aria-current="page">Community</Link>
       </nav>}</div>
       <div className="account-actions">{onOpenProfile ? <button type="button" className="avatar" aria-label="Open profile" title={`Profile · ${name}`} onClick={onOpenProfile}><ProfileAvatar avatarId={avatarId} name={name} /></button> : <Link className="avatar" aria-label="Open profile" href={area === "admin" ? "/admin" : "/app?profile=1"} prefetch={false}><ProfileAvatar avatarId={avatarId} name={name} /></Link>}</div>
     </header>
