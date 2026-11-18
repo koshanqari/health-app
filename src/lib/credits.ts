@@ -168,7 +168,7 @@ export async function getCreditDetails(userId: string, includeHistory: boolean |
     } else wallet = await lockWallet(connection, userId);
     const { fxCents } = creditSettings();
     const [average] = await connection.execute<DatabaseRow[]>(`SELECT AVG("costMicros") AS average FROM (
-      SELECT "costMicros" FROM "foodAiUsage" WHERE "userId" = $1 AND status = 'succeeded' AND "promptTokens" IS NOT NULL AND "costMicros" > 0 ORDER BY "createdAt" DESC LIMIT 20
+      SELECT "costMicros" FROM "foodAiUsage" WHERE "userId" = $1 AND status = 'succeeded' AND "promptTokens" IS NOT NULL AND "costMicros" > 0 ORDER BY "createdAt" DESC LIMIT 10
     ) recent`, [userId]);
     const typical = creditCharge(Math.ceil(Number(average[0].average ?? 1500)), fxCents, wallet.multiplierHundred);
     const available = wallet.balanceCents - wallet.heldCents, maximum = creditCharge(CREDIT_RESERVATION_USD_MICROS, fxCents, wallet.multiplierHundred);

@@ -47,7 +47,7 @@ export function AdminDocs({ billingRate }: { billingRate: number }) {
       <h2 id="docs-current-billing">4. How the app currently bills</h2>
       <p>One credit represents ₹1. The app currently uses a fixed billing conversion of <strong>₹{currency(billingRate)} per US dollar</strong>, rather than the reference rate above. GST is not added separately to credit deductions.</p>
       <p className="docs-formula">Credits charged = recorded API cost in USD × billing conversion × the user’s multiplier.</p>
-      <p>Each request’s USD cost is recorded rounded up to a micro-dollar, then its credit charge is rounded up to 0.01 credit. Photos and conversation length change the cost; the number of replies remaining is an estimate.</p>
+      <p>Each request’s USD cost is recorded rounded up to a micro-dollar, then its credit charge is rounded up to 0.01 credit. Photos and conversation length change the cost; the number of replies remaining is estimated from that user’s last 10 successful, metered requests (or a starter estimate without usage history).</p>
       <p>New account defaults are editable in Community. Changing those defaults affects future signups; an existing account’s multiplier is edited separately. Credit additions never change the multiplier.</p>
     </section>
   </article>;

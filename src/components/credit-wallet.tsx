@@ -65,7 +65,7 @@ function WalletDialog({ target, onClose, onLoaded, onChanged, adminMode }: {
       {data && <>
         <p className="credit-total"><strong>{amount(data.available)}</strong><span>credits remaining</span></p>
         <p className="credit-estimate">About <strong>{data.estimatedReplies}</strong> replies remaining</p>
-        {adminData && <><p className="credit-help">An estimate from recent AI usage, or a typical reply for a new account. Photos and longer conversations can use more. Shared AI limits still apply.</p>
+        {adminData && <><p className="credit-help">An estimate from the user’s last 10 successful, metered AI requests, or a typical reply for a new account. Photos and longer conversations can use more. Shared AI limits still apply.</p>
         <details className="credit-help"><summary>How multipliers work</summary>
           <p>Credits charged = provider cost in USD × billing conversion to ₹ × the user’s multiplier, rounded up to 0.01 credit. One credit represents ₹1.</p>
           <p>To choose a multiplier: credits offered ÷ target replies ÷ average credits per reply at 1×.</p>
