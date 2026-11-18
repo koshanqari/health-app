@@ -611,13 +611,16 @@ h1, h2, h3 { line-height: 1.2; }
 .credit-defaults .journal-notice, .credit-defaults .form-error { margin-top: 12px; }
 @media (max-width: 480px) { .credit-default-fields { grid-template-columns: 1fr; gap: 0; } }
 
-.admin-layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 36px; width: calc(100% - 64px); max-width: 1320px; margin: 0 auto; flex: 1; }
-.admin-sidebar { padding-top: 48px; display: flex; flex-direction: column; gap: 6px; }
+.admin-workspace { position: fixed; inset: 0; height: 100dvh; min-height: 0; overflow: hidden; }
+.admin-workspace > .app-header { flex-shrink: 0; }
+.admin-layout { min-height: 0; overflow: hidden; display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 36px; width: calc(100% - 64px); max-width: 1320px; margin: 0 auto; flex: 1; }
+.admin-sidebar { min-height: 0; overflow-y: auto; padding-top: 48px; display: flex; flex-direction: column; gap: 6px; }
 .admin-sidebar p { color: var(--muted); font-size: 11px; font-weight: 800; padding: 0 14px 10px; }
 .admin-sidebar a { padding: 12px 14px; border-radius: 12px; font-size: 14px; font-weight: 750; color: var(--muted); text-decoration: none; }
 .admin-sidebar a:hover { background: var(--surface); }
 .admin-sidebar a[aria-current="page"] { color: var(--accent-text); background: var(--selected); }
-.admin-layout .admin-main { width: 100%; min-width: 0; }
+.admin-layout .admin-main { width: 100%; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: 16px; }
+.admin-main > .workspace-footer { margin-top: 32px; }
 .admin-docs { max-width: 860px; }
 .admin-docs section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
 .admin-docs h2 { font-size: 20px; margin-bottom: 12px; }
@@ -633,8 +636,9 @@ h1, h2, h3 { line-height: 1.2; }
 .admin-docs .docs-note { color: var(--muted); font-size: 12px; }
 .docs-formula { padding-left: 14px; border-left: 3px solid var(--line); }
 @media (max-width: 700px) {
-  .admin-layout { display: block; width: calc(100% - 40px); }
-  .admin-sidebar { flex-direction: row; padding-top: 20px; gap: 8px; }
+  .admin-layout { display: flex; flex-direction: column; gap: 0; width: calc(100% - 40px); }
+  .admin-layout .admin-main { flex: 1; height: auto; padding-right: 0; }
+  .admin-sidebar { flex-shrink: 0; flex-direction: row; padding: 20px 0 12px; gap: 8px; }
   .admin-sidebar p { display: none; }
   .admin-sidebar a { flex: 1; text-align: center; }
   .docs-table { font-size: 12px; }

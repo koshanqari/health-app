@@ -31,7 +31,7 @@ export function ChevronIcon({ direction }: { direction: "left" | "right" | "up" 
 export function AppShell({ name, avatarId = null, isAdmin = false, area = "member", activeTab = "home", children, onOpenProfile }: {
   name: string; avatarId?: ProfileAvatarId | null; isAdmin?: boolean; area?: "member" | "admin"; activeTab?: AppTab; children: React.ReactNode; onOpenProfile?: () => void;
 }) {
-  return <div className={area === "member" ? activeTab === "chat" ? "workspace has-bottom-nav ai-workspace" : "workspace has-bottom-nav" : "workspace"}>
+  return <div className={area === "member" ? activeTab === "chat" ? "workspace has-bottom-nav ai-workspace" : "workspace has-bottom-nav" : "workspace admin-workspace"}>
     <header className="app-header">
       <div className="app-brand"><Brand href={area === "member" ? "/app" : "/admin"} />{isAdmin && area === "admin" && <nav aria-label="Account areas">
         <Link href="/app" prefetch={false} className="nav-item">Your space</Link>
@@ -39,7 +39,7 @@ export function AppShell({ name, avatarId = null, isAdmin = false, area = "membe
       <div className="account-actions">{onOpenProfile ? <button type="button" className="avatar" aria-label="Open profile" title={`Profile · ${name}`} onClick={onOpenProfile}><ProfileAvatar avatarId={avatarId} name={name} /></button> : <Link className="avatar" aria-label="Open profile" href={area === "admin" ? "/admin" : "/app?profile=1"} prefetch={false}><ProfileAvatar avatarId={avatarId} name={name} /></Link>}</div>
     </header>
     {children}
-    {!(area === "member" && activeTab === "chat") && <footer className="workspace-footer">Small steps. Your own pace.</footer>}
+    {area === "member" && activeTab !== "chat" && <footer className="workspace-footer">Small steps. Your own pace.</footer>}
     {area === "member" && <nav className="bottom-nav" aria-label="Main navigation">{tabs.map(tab => <Link key={tab.id} href={tab.href} prefetch={false} className={activeTab === tab.id ? "bottom-nav-item active" : "bottom-nav-item"} aria-current={activeTab === tab.id ? "page" : undefined}><AppIcon name={tab.id} /><span>{tab.label}</span></Link>)}</nav>}
   </div>;
 }

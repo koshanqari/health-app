@@ -1169,5 +1169,14 @@ test("admin sidebar opens cost docs, supports direct links and preserves unsaved
   await expect(page.getByRole("heading", { name: "Cost calculation", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("aria-current", "page");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const sidebarTop = await navigation.evaluate(element => element.getBoundingClientRect().top);
+  const content = page.getByRole("main");
+  await content.evaluate(element => { element.scrollTop = 400; });
+  await expect.poll(() => content.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  expect(await navigation.evaluate(element => element.getBoundingClientRect().top)).toBe(sidebarTop);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(navigation.getByRole("link", { name: "Docs", exact: true })).toBeInViewport();
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-docs-scroll.png`, fullPage: true });
+  await content.evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-admin-cost-docs.png`, fullPage: true });
 });

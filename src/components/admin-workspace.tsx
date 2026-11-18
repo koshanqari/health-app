@@ -27,6 +27,7 @@ export function AdminWorkspace({ name, avatarId, children, docs }: { name: strin
         <main id="main-content" className="workspace-main admin-main">
           <div hidden={active !== "community"}>{children}</div>
           <div hidden={active !== "docs"}>{docs}</div>
+          <footer className="workspace-footer">Small steps. Your own pace.</footer>
         </main>
       </div>
     </AppShell>
