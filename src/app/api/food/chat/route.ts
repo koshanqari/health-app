@@ -1,6 +1,6 @@
 import { getMemberSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
-import { confirmFoodChatProfile, confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "@/lib/food-chat";
+import { confirmFoodChatActivity, confirmFoodChatProfile, confirmFoodChatGoals, confirmFoodChat, getFoodChat, sendFoodChat, resetFoodChat } from "@/lib/food-chat";
 import { FoodAiError, readLimitedBody } from "@/lib/food-ai";
 
 import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, photoModes, type FoodChatPhotoMode } from "@/lib/food";
@@ -48,6 +48,7 @@ export async function PATCH(request: Request) {
     let body;
     try { body = JSON.parse((await readLimitedBody(request, 8192)).toString("utf8")); }
     catch (error) { if (error instanceof FoodAiError) throw error; return json({ message: "Check the food details." }, 400); }
+    if (body?.activity !== undefined) return json(await confirmFoodChatActivity(session.user.id, body?.draftId, body.activity));
     if (body?.profile !== undefined) return json(await confirmFoodChatProfile(session.user.id, body?.draftId, body.profile));
     return json(body?.goals !== undefined ? await confirmFoodChatGoals(session.user.id, body?.draftId, body.goals) : await confirmFoodChat(session.user.id, body?.draftId, body?.food));
   } catch (error) { return failure(error); }

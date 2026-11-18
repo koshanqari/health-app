@@ -1,3 +1,4 @@
+import { localDateTime } from "../src/lib/food";
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -109,7 +110,7 @@ test("signup validates confirmation, creates a user, persists login, and signs o
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   for (const tab of [
     { name: "Food", heading: "Food" },
-    { name: "Activity", heading: "Your activity" },
+    { name: "Activity", heading: "Activity" },
     { name: "Progress", heading: "Your progress" },
   ]) {
     await navigation.getByRole("link", { name: tab.name, exact: true }).click();
@@ -117,7 +118,7 @@ test("signup validates confirmation, creates a user, persists login, and signs o
       else await expect(page.getByRole("heading", { name: tab.heading, exact: true })).toBeVisible();
     await expect(navigation.getByRole("link", { name: tab.name, exact: true })).toHaveAttribute("aria-current", "page");
     if (tab.name === "Food") await expect(page.getByRole("button", { name: "Log food", exact: true })).toBeVisible();
-    else await expect(page.locator(".tab-placeholder:visible").getByText("Coming soon", { exact: true })).toBeVisible();
+    else if (tab.name === "Progress") await expect(page.locator(".tab-placeholder:visible").getByText("Coming soon", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
   await page.reload();
@@ -476,7 +477,7 @@ test("tabs switch without network, preserve journal state, and support browser h
       { name: "Home", heading: "Hi, Test." },
       { name: "AI", heading: "Kay" },
       { name: "Food", heading: "Food" },
-      { name: "Activity", heading: "Your activity" },
+      { name: "Activity", heading: "Activity" },
       { name: "Progress", heading: "Your progress" },
       { name: "Food", heading: "Food" },
     ]) {
@@ -566,7 +567,7 @@ test("food chat understands follow-ups, reviews before saving, persists history,
   try {
     await expect(page.getByText("Working on your reply…")).toBeVisible();
     await nav.getByRole("link", { name: "Activity", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Your activity", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
   } finally { release(); }
   await nav.getByRole("link", { name: "AI", exact: true }).click();
   await expect(page.getByRole("button", { name: "Review meal", exact: true })).toBeVisible();
@@ -1187,7 +1188,7 @@ test("admin sidebar opens cost docs, supports direct links and preserves unsaved
 
 test("admin can view a member read-only and exit without replacing either account session", async ({ page }, info) => {
   await db.execute(`INSERT INTO "foodEntry" (id, "userId", name, calories, protein, carbs, fat, category, "eatenAtLocal", "timeZone")
-    VALUES ($1, $2, 'Private view meal', 400, 25, 45, 13, 'healthy', $3, 'Asia/Kolkata')`, [randomUUID(), memberId, new Date().toISOString().slice(0, 10) + "T12:00"]);
+    VALUES ($1, $2, 'Private view meal', 400, 25, 45, 13, 'healthy', $3, 'Asia/Kolkata')`, [randomUUID(), memberId, localDateTime().slice(0, 10) + "T12:00"]);
   const [targets] = await db.execute<DatabaseRow[]>('SELECT name FROM "user" WHERE id = $1', [memberId]);
   const targetName = String(targets[0].name);
   const [originalChats] = await db.execute<DatabaseRow[]>('SELECT * FROM "foodChat" WHERE "userId" = $1', [memberId]);
@@ -1271,4 +1272,126 @@ test("Kay proposes editable age, sex, height and weight updates and saves only a
   await expect(page.getByText("Profile saved.", { exact: true })).toHaveCount(2);
   profile = (await (await page.request.get("/api/account")).json()).user;
   expect(profile.weightKg).toBe(76); expect(profile.age).toBe(28); expect(profile.heightCm).toBe(175); expect(profile.sex).toBe("male");
+});
+
+test("activity logger supports all types, independent fields, goals and history without overflow", async ({ page }, info) => {
+  await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
+  await db.execute('DELETE FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]);
+  await chatLogin(page);
+  const profileResponse = await page.request.patch("/api/account", { headers: { Origin: baseURL }, data: { age: 30, weightKg: 70 } }); expect(profileResponse.status()).toBe(200);
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Activity history", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Log activity", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Log activity", exact: true });
+  for (const type of ["walking", "running", "cycling", "swimming", "strength", "badminton", "cricket", "football", "hiking", "others"]) {
+    await dialog.getByLabel("Activity", { exact: true }).selectOption(type);
+    await expect(dialog.getByLabel("Duration", { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Pace", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByLabel("Speed", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByLabel("Steps", { exact: true })).toHaveCount(["walking", "running", "hiking"].includes(type) ? 1 : 0);
+    await expect(dialog.getByLabel("Distance", { exact: true })).toHaveCount(["walking", "running", "cycling", "swimming", "hiking"].includes(type) ? 1 : 0);
+    if (type === "others") { await expect(dialog.getByLabel("Active calories", { exact: true })).toBeVisible(); await expect(dialog.getByLabel("Calories", { exact: true })).toHaveValue("manual"); }
+  }
+  await dialog.getByLabel("Activity", { exact: true }).selectOption("walking");
+  await dialog.getByLabel("Logging", { exact: true }).selectOption("daily_total");
+  await expect(dialog.getByLabel("Duration", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Distance", { exact: true })).toHaveCount(0);
+  await dialog.getByLabel("Steps", { exact: true }).fill("3000");
+  await expect(dialog.getByRole("status")).toContainText("Calories not estimated");
+  await dialog.getByLabel("Logging", { exact: true }).selectOption("session");
+  await dialog.getByLabel("Duration", { exact: true }).fill("60");
+  await dialog.getByLabel("Distance", { exact: true }).fill("5");
+  await dialog.getByLabel("Steps", { exact: true }).fill("6000");
+  await expect(dialog.getByRole("status")).toContainText("205.8 kcal");
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-activity-form.png`, fullPage: true });
+  await dialog.getByRole("button", { name: "Save activity", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".activity-entries article")).toHaveCount(1);
+  await page.getByRole("button", { name: "Set goals", exact: true }).click();
+  const goals = page.getByRole("dialog", { name: "Daily activity goals", exact: true });
+  await goals.getByLabel("Logged active calories", { exact: true }).fill("200");
+  await goals.getByLabel("Steps", { exact: true }).fill("5000");
+  await goals.getByLabel("Active minutes", { exact: true }).fill("30");
+  await goals.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(goals).not.toBeVisible();
+  await expect(page.locator(".activity-summary small").filter({ hasText: "Goal achieved" })).toHaveCount(3);
+  const history = page.getByRole("region", { name: "Activity goal history", exact: true });
+  const today = await page.getByLabel("Activity date", { exact: true }).inputValue();
+  await expect(history.locator(`[data-date="${today}"]`)).toHaveAttribute("data-status", "achieved");
+  const chart = history.getByRole("group", { name: /Daily activity chart/ });
+  await chart.focus(); await chart.press("End");
+  await expect(history.locator(".history-value")).toContainText("205.8");
+  for (const period of ["M", "6M", "Y", "W"]) { await history.getByRole("button", { name: period, exact: true }).click(); await expect(history.locator(".history-canvas svg")).toBeVisible(); }
+  await history.getByRole("button", { name: "Steps", exact: true }).click();
+  await expect(history.locator(`[data-date="${today}"]`)).toHaveAttribute("data-status", "achieved");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-activity-page.png`, fullPage: true });
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Edit activity", exact: true });
+  await edit.getByLabel("Steps", { exact: true }).fill("6500");
+  await edit.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.locator(".activity-entries")).toContainText("6,500 steps");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator(".activity-entries article")).toHaveCount(0);
+});
+
+test("Kay activity proposal is editable and saves only on final confirmation", async ({ page }, info) => {
+  await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
+  await db.execute('INSERT INTO "userProfile" ("userId", age, "weightKg") VALUES ($1,30,70) ON CONFLICT ("userId") DO UPDATE SET age=30, "weightKg"=70', [memberId]);
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "Review your badminton session.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "badminton", name: "Evening badminton", durationMinutes: 45, distanceKm: null, steps: null, detail: "social", calorieSource: "estimated", calories: null, notes: "", occurredAtLocal: "2026-11-10T18:00" } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } }) });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  await page.getByLabel("Your message", { exact: true }).fill("I played badminton socially for 45 minutes");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("button", { name: "Review activity", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Review activity", exact: true });
+  await expect(dialog.getByLabel("Activity", { exact: true })).toHaveValue("badminton");
+  const [before] = await db.execute('SELECT id FROM "activityEntry" WHERE "userId"=$1', [memberId]); expect(before).toHaveLength(0);
+  await dialog.getByLabel("Duration", { exact: true }).fill("30");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-activity-review.png`, fullPage: true });
+  await dialog.getByRole("button", { name: "Save activity", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  const [saved] = await db.execute('SELECT data FROM "activityEntry" WHERE "userId"=$1', [memberId]); expect(saved).toHaveLength(1); expect(saved[0].data.durationMinutes).toBe(30); expect(saved[0].data.calories).toBe(165.38);
+  await page.getByRole("link", { name: "View activity", exact: true }).click();
+  await page.getByLabel("Activity date", { exact: true }).fill("2026-11-10");
+  await expect(page.locator(".activity-entries")).toContainText("Evening badminton");
+});
+
+test("Kay records daily steps without duration or profile and updates the same total", async ({ page }, info) => {
+  await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
+  await db.execute('DELETE FROM "userProfile" WHERE "userId"=$1', [memberId]);
+  let calls = 0;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    calls++;
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async (_url, init) => {
+      const body = JSON.parse(String(init?.body)); expect(body.systemInstruction.parts[0].text).toContain('a daily step total');
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "Review your daily step total. Calories are not estimated.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "walking", name: "Daily steps", stepScope: "daily_total", steps: calls === 1 ? 3000 : 3500, calorieSource: "not_estimated", calories: null, durationMinutes: null, distanceKm: null, detail: null, notes: "", occurredAtLocal: localDateTime() } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+    } });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  for (const message of ["I walked 3000 steps today", "Actually 3500, total throughout the day"]) {
+    await page.getByLabel("Your message", { exact: true }).fill(message);
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await page.getByRole("button", { name: "Review activity", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Review activity", exact: true });
+    await expect(dialog.getByLabel("Duration", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByLabel("Distance", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("status")).toContainText("Calories not estimated");
+    await dialog.getByRole("button", { name: "Save activity", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+  }
+  const [rows] = await db.execute('SELECT data FROM "activityEntry" WHERE "userId"=$1', [memberId]); expect(rows).toHaveLength(1); expect(rows[0].data.steps).toBe(3500); expect(rows[0].data.calories).toBe(null);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Activity", exact: true }).click();
+  await expect(page.locator(".activity-summary")).toContainText("3,500");
+  await expect(page.locator(".activity-entries")).toContainText("Calories not estimated");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-daily-steps.png`, fullPage: true });
 });

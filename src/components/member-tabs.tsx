@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type Rea
 import { MemberViewProvider, ViewingBanner, type ViewingAs } from "./member-view";
 import { AppShell, type AppTab } from "./app-header";
 import { FoodChat } from "./food-chat";
+import { ActivityJournal } from "./activity-journal";
 import { FoodJournal } from "./food-journal";
 import { Profile } from "./profile";
 import { useRouter } from "next/navigation";
@@ -14,10 +15,10 @@ const readTab = (search: string): AppTab => {
   return value === "chat" || value === "food" || value === "activity" || value === "progress" ? value : "home";
 };
 
-export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, initialProfileOpen = false, notice, home, activity, progress, viewingAs = null }: {
+export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, initialProfileOpen = false, notice, home, progress, viewingAs = null }: {
   name: string; initialAvatarId?: ProfileAvatarId | null; isAdmin: boolean; initialTab: AppTab; initialProfileOpen?: boolean; notice?: ReactNode;
   viewingAs?: ViewingAs | null;
-  home: ReactNode; activity: ReactNode; progress: ReactNode;
+  home: ReactNode; progress: ReactNode;
 }) {
   const [aiStarter, setAiStarter] = useState<{ id: number; prompt: string } | null>(null);
   const [tab, setTab] = useState(initialTab);
@@ -93,10 +94,10 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
         <div hidden={tab !== "home"}>{home}</div>
         <div hidden={tab !== "chat"}><FoodChat active={tab === "chat"} starter={aiStarter} /></div>
         <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} onAskAI={viewingAs ? undefined : askAIForGoals} /></div>
-        <div hidden={tab !== "activity"}>{activity}</div>
+        <div hidden={tab !== "activity"}><ActivityJournal active={tab === "activity"} onOpenProfile={openProfile} onAskAI={viewingAs ? undefined : () => { setAiStarter({ id: Date.now(), prompt: "Help me log an activity. Use my saved profile and ask for the activity, duration and any other details needed. Prepare a proposal I can review and save." }); window.history.pushState(null, "", "/app?tab=chat"); selectTab("chat"); }} /></div>
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>
     </AppShell>
-    {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); setAvatarId(user.avatarId); router.refresh(); }} />}
+    {profileOpen && <Profile onClose={closeProfile} onSaved={user => { setDisplayName(user.name); setAvatarId(user.avatarId); window.dispatchEvent(new Event("profile-saved")); router.refresh(); }} />}
   </div></MemberViewProvider>;
 }

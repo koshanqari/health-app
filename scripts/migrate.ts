@@ -1,3 +1,4 @@
+import { migrateActivity } from "../src/lib/activity-store";
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/lib/auth";
 import { migrateProfileDetails } from "../src/lib/profile-store";
@@ -113,12 +114,13 @@ try {
       $$ LANGUAGE plpgsql`);
     await connection.execute('DROP TRIGGER IF EXISTS daywell_food_updated_at ON "foodEntry"');
     await connection.execute('CREATE TRIGGER daywell_food_updated_at BEFORE UPDATE ON "foodEntry" FOR EACH ROW EXECUTE FUNCTION daywell_food_updated_at()');
+    await migrateActivity(connection);
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
   const bootstrap = await bootstrapAdmin(process.env);
   if (bootstrap === "promoted") console.log("Existing account granted administrator access. Sign in at /admin with its usual password.");
-  console.log("Postgres authentication, profiles, food journal, daily goals, AI budget, credits, and chat schemas are ready.");
+  console.log("Postgres authentication, profiles, food/activity journals, daily goals, AI budget, credits, and chat schemas are ready.");
 } catch (error) {
   console.error("Could not migrate Postgres. Check DATABASE_URL and database connectivity.");
   if (error && typeof error === "object" && "code" in error) console.error("Database error code:", String(error.code));

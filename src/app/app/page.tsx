@@ -12,7 +12,7 @@ export const metadata = { title: "Your space" };
 
 const features = [
   { id: "food" as const, title: "Food journal", copy: "A place for the meals that make you feel good.", heading: "Your food journal", detail: "Log your meals and nutrition, and look back at your day." },
-  { id: "activity" as const, title: "Movement you love", copy: "A walk, a stretch, a little more room to move.", heading: "Your activity", detail: "A place for your walks, workouts, and everyday movement. Exercise logging is coming soon." },
+  { id: "activity" as const, title: "Movement you love", copy: "A walk, a stretch, a little more room to move.", heading: "Your activity", detail: "A place for your walks, workouts, and everyday movement. Log your walks, games and workouts." },
   { id: "progress" as const, title: "Your small beginnings", copy: "See how your everyday efforts add up.", heading: "Your progress", detail: "Your daily goals and monthly milestones will live here. Progress tracking is coming soon." },
 ];
 
@@ -68,15 +68,14 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           <div className="ready-check" aria-hidden="true">✓</div><div><h2>Your account is ready.</h2><p>Signed in as <strong>{user.email}</strong>.</p></div>
         </section>
     </>}
-    activity={<UpcomingFeature id="activity" />}
     progress={<UpcomingFeature id="progress" />}
   />;
 }
 
-function UpcomingFeature({ id }: { id: "activity" | "progress" }) {
+function UpcomingFeature({ id }: { id: "progress" }) {
   const feature = features.find(item => item.id === id)!;
   return <>
-    <p className="eyebrow">Your space / {id === "activity" ? "Activity" : "Progress"}</p>
+    <p className="eyebrow">Your space / Progress</p>
     <h1>{feature.heading}</h1>
     <section className="tab-placeholder">
       <div className="tab-feature-icon"><AppIcon name={id} /></div>
