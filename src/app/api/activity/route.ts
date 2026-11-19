@@ -1,10 +1,9 @@
-import { db } from "@/lib/db";
 import { getMemberSession } from "@/lib/session";
 import { trustedAppOrigins } from "@/lib/app-origins";
 import { isFoodDate } from "@/lib/food";
 import { historyPeriods, type HistoryPeriod } from "@/lib/food-history";
-import { parseActivityGoals } from "@/lib/activity";
-import { ActivityError, activityTransaction, deleteActivity, getActivityHistory, getActivityJournal, saveActivity, validActivityId } from "@/lib/activity-store";
+import { parseActivityGoalChange } from "@/lib/activity";
+import { ActivityError, activityTransaction, deleteActivity, getActivityHistory, getActivityJournal, saveActivity, saveActivityGoalChange, validActivityId } from "@/lib/activity-store";
 export const runtime = "nodejs";
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 const unavailable = () => json({ message: "We couldn’t reach your activity journal. Please try again." }, 503);
@@ -26,9 +25,8 @@ async function mutate(request: Request, method: "POST" | "PATCH" | "DELETE" | "P
   try { const text = await request.text(); if (text.length > 8192) return json({ message: "This entry is too large." }, 413); body = JSON.parse(text); if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error(); } catch { return json({ message: "Check your activity details." }, 400); }
   try {
     if (method === "PUT") {
-      if (!isFoodDate(body.effectiveFrom)) return json({ message: "Choose a valid goal start date." }, 400);
-      const goals = parseActivityGoals(body.goals);
-      await db.execute('INSERT INTO "activityGoalVersion" ("userId", "effectiveFrom", targets) VALUES ($1,$2,$3) ON CONFLICT ("userId", "effectiveFrom") DO UPDATE SET targets=EXCLUDED.targets', [session.user.id, body.effectiveFrom, JSON.stringify(goals)]);
+      const change = parseActivityGoalChange(body);
+      await activityTransaction(connection => saveActivityGoalChange(connection, session.user.id, change));
       return json({ saved: true });
     }
     if (!validActivityId(body.id) || (method !== "POST" && (!Number.isSafeInteger(body.revision) || body.revision < 1))) return json({ message: "Choose a valid activity and revision." }, 400);

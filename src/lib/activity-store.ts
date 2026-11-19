@@ -80,3 +80,8 @@ export async function getActivityHistory(userId: string, period: HistoryPeriod, 
   for (let d = start; d <= end; d = nextFoodDate(d)) days.push(byDate.get(d) ?? { date: d, entries: 0, calories: 0, steps: 0, minutes: 0 });
   return { start, end, days, goalVersions: versions as ActivityGoalVersion[] };
 }
+
+export async function saveActivityGoalChange(connection: DatabaseConnection, userId: string, change: { goals: import("./activity").ActivityGoals; effectiveFrom: string }) {
+  await connection.execute('SELECT pg_advisory_xact_lock(1835462107, hashtext($1))', [userId]);
+  await connection.execute('INSERT INTO "activityGoalVersion" ("userId", "effectiveFrom", targets) VALUES ($1,$2,$3) ON CONFLICT ("userId", "effectiveFrom") DO UPDATE SET targets=EXCLUDED.targets', [userId, change.effectiveFrom, JSON.stringify(change.goals)]);
+}

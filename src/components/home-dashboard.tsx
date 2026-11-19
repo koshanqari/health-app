@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { GoalForm } from "./food-goals";
+import { ActivityGoalForm } from "./activity-journal";
 import { useMemberFetch, useViewingAs } from "./member-view";
 import { localDateTime, type FoodSummary } from "@/lib/food";
 import { foodGoalProgress, type FoodGoals } from "@/lib/food-goals";
@@ -30,9 +32,11 @@ function SmallSteps() {
     <path d="M94 33c-3-11 1-20 11-24 3 12-1 20-11 24Z" fill="#34A853" />
   </svg>;
 }
-export function HomeDashboard({ active, name, initialProfile, onOpenProfile }: { active: boolean; name: string; initialProfile: HomeProfile; onOpenProfile: () => void }) {
+export function HomeDashboard({ active, name, initialProfile, onOpenProfile, onAskFoodAI, onAskActivityAI }: { onAskFoodAI?: (date: string) => void; onAskActivityAI?: (date: string) => void; active: boolean; name: string; initialProfile: HomeProfile; onOpenProfile: () => void }) {
   const fetch = useMemberFetch(), viewingAs = useViewingAs();
   const [date, setDate] = useState("");
+  const [setupDialog, setSetupDialog] = useState<"food" | "activity" | null>(null);
+  useEffect(() => { if (!active) setSetupDialog(null); }, [active]);
   const [data, setData] = useState<HomeData | null>(null), [profile, setProfile] = useState(initialProfile), [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const cache = useRef<{ value: HomeData; at: number } | null>(null);
@@ -46,7 +50,7 @@ export function HomeDashboard({ active, name, initialProfile, onOpenProfile }: {
   }, []);
   useEffect(() => {
     const changed = () => { cache.current = null; setRevision(value => value + 1); };
-    const events = ["profile-saved", "food-chat-saved", "food-goals-saved", "activity-saved", "daywell-summary-changed"];
+    const events = ["profile-saved", "food-chat-saved", "food-goals-saved", "activity-saved", "activity-goals-saved", "daywell-summary-changed"];
     for (const event of events) window.addEventListener(event, changed);
     return () => { for (const event of events) window.removeEventListener(event, changed); };
   }, []);
@@ -60,13 +64,30 @@ export function HomeDashboard({ active, name, initialProfile, onOpenProfile }: {
   }, [active, date, revision, fetch]);
   const today = data?.date === date ? data : null;
   const missing = ([ ["age", "age"], ["sex", "sex"], ["heightCm", "height"], ["weightKg", "weight"] ] as const).filter(([key]) => profile[key] === null).map(([, label]) => label);
+  const foodReady = !!today?.foodGoals;
+  const activityReady = !!today?.activityGoals && Object.values(today.activityGoals).some(value => value !== null);
+  const setupRows = [
+    { key: "profile", label: "Complete your profile", complete: missing.length === 0, loading: false, detail: missing.length ? "Add your " + missing.join(", ") + " to help Kay give better estimates." : "Your details are ready.", action: onOpenProfile },
+    { key: "food", label: "Set daily food goal", complete: foodReady, loading: !today, detail: "Calories, protein, carbs and fat.", action: () => setSetupDialog("food") },
+    { key: "activity", label: "Set daily activity goal", complete: activityReady, loading: !today, detail: "Active calories, steps or minutes.", action: () => setSetupDialog("activity") },
+  ];
   const note = date ? dailyNotes[Math.floor(Date.parse(date + "T00:00:00Z") / 86400000) % dailyNotes.length] : "Let’s make a little room for feeling good.";
   const activityGoal = today?.activityGoals?.calories;
   const foodProgress = today?.foodGoals ? foodGoalProgress(today.food.calories, today.foodGoals.calories) : null;
   return <div className="home-dashboard">
     <header className="home-greeting"><div><h1>Hi, {name.trim().split(/\s+/)[0]}.</h1><p className="home-daily-note" aria-label="Today’s thought">{note}</p></div><SmallSteps /></header>
-    {missing.length > 0 && <section className="home-profile-setup" aria-label="Profile setup"><div><h2>Complete your profile</h2><p>Add your {missing.join(", ")} to help Kay give better estimates.</p></div><button className="text-button" onClick={onOpenProfile}>{viewingAs ? "View profile" : "Set up profile"}</button></section>}
+    {(missing.length > 0 || (today && (!foodReady || !activityReady))) && <section className="home-profile-setup home-setup-checklist" aria-label="Profile setup">
+      <h2>Your setup</h2><ol>{setupRows.map((row, index) => <li key={row.key} data-complete={row.complete}>
+        <button type="button" aria-label={row.label} disabled={row.key !== "profile" && (!!viewingAs || row.loading)} onClick={row.action}>
+          <span className="home-setup-number" aria-hidden="true">{row.complete ? <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 10 4 4 8-8" /></svg> : index + 1}</span>
+          <span className="home-setup-copy"><strong>{row.label}</strong><small>{row.detail}</small></span>
+          <span className="home-setup-state">{row.loading ? "Loading…" : row.complete ? "Completed" : row.key === "profile" && viewingAs ? "View" : "Set up"}</span>
+        </button>
+      </li>)}</ol>
+    </section>}
     {error && <p className="form-error" role="alert">{error} <button className="text-button" onClick={() => setRevision(value => value + 1)}>Try again</button></p>}
+    {setupDialog === "food" && <GoalForm goals={today?.foodGoals ?? null} initialEffectiveFrom={date} onClose={() => setSetupDialog(null)} onAskAI={onAskFoodAI ? effectiveFrom => { setSetupDialog(null); onAskFoodAI(effectiveFrom); } : undefined} onSaved={() => { setSetupDialog(null); window.dispatchEvent(new Event("food-goals-saved")); }} />}
+    {setupDialog === "activity" && <ActivityGoalForm goals={today?.activityGoals ?? null} date={date} onClose={() => setSetupDialog(null)} onAskAI={onAskActivityAI ? effectiveFrom => { setSetupDialog(null); onAskActivityAI(effectiveFrom); } : undefined} onSaved={() => { setSetupDialog(null); window.dispatchEvent(new Event("activity-goals-saved")); }} />}
     <section className="home-today home-today-activity" aria-labelledby="home-activity-title" aria-busy={!today && !error}>
       <div className="home-section-heading"><h2 id="home-activity-title">Today’s activity</h2><Link href="/app?tab=activity" prefetch={false}>View activity</Link></div>
       <p className="home-total"><strong>{today ? format(today.activity.calories) : "—"}</strong><span>kcal active</span></p>

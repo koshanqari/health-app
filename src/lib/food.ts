@@ -27,16 +27,18 @@ export type FoodChatProfileDraft = {
 };
 export type FoodChatActivityDraft = { kind: "activity"; draftId: string; analysisId: string; targetEntryId?: string | null; targetRevision?: number | null; activity: import("./activity").ActivityInput };
 export const isActivityDraft = (draft: FoodChatPendingDraft): draft is FoodChatActivityDraft => "kind" in draft && draft.kind === "activity";
-export type FoodChatPendingDraft = FoodChatActivityDraft | FoodChatDraft | FoodChatGoalDraft | FoodChatProfileDraft;
+export type FoodChatActivityGoalDraft = { kind: "activity_goals"; draftId: string; analysisId: string; goals: import("./activity").ActivityGoals; effectiveFrom: string; assumptions: string };
+export const isActivityGoalDraft = (draft: FoodChatPendingDraft): draft is FoodChatActivityGoalDraft => "kind" in draft && draft.kind === "activity_goals";
+export type FoodChatPendingDraft = FoodChatActivityGoalDraft | FoodChatActivityDraft | FoodChatDraft | FoodChatGoalDraft | FoodChatProfileDraft;
 export const isProfileDraft = (draft: FoodChatPendingDraft): draft is FoodChatProfileDraft => "kind" in draft && draft.kind === "profile";
 export const isGoalDraft = (draft: FoodChatPendingDraft): draft is FoodChatGoalDraft => "kind" in draft && draft.kind === "goals";
 export type FoodChatMessage = {
   id: string; requestId: string; sequence: number; role: "user" | "assistant"; content: string; createdAt: string;
-  payload: { state: "pending" | "failed" | "ready" | "logged" | "superseded"; hasPhoto?: boolean; photoCount?: number; photoMode?: FoodChatPhotoMode; draft?: FoodChatDraft; goalDraft?: FoodChatGoalDraft; profileDraft?: FoodChatProfileDraft; activityDraft?: FoodChatActivityDraft; summary?: FoodSummary; entryId?: string; operation?: "create" | "update"; error?: string; requestHash?: string };
+  payload: { state: "pending" | "failed" | "ready" | "logged" | "superseded"; hasPhoto?: boolean; photoCount?: number; photoMode?: FoodChatPhotoMode; draft?: FoodChatDraft; goalDraft?: FoodChatGoalDraft; profileDraft?: FoodChatProfileDraft; activityDraft?: FoodChatActivityDraft; activityGoalDraft?: FoodChatActivityGoalDraft; summary?: FoodSummary; entryId?: string; operation?: "create" | "update"; error?: string; requestHash?: string };
 };
 export type FoodChatState = {
   chatId: string; version: number; messages: FoodChatMessage[]; hasMore: boolean;
-  draft: FoodChatDraft | null; goalDraft?: FoodChatGoalDraft | null; profileDraft?: FoodChatProfileDraft | null; activityDraft?: FoodChatActivityDraft | null; pending: boolean; quota: PhotoAnalysisStatus;
+  draft: FoodChatDraft | null; goalDraft?: FoodChatGoalDraft | null; profileDraft?: FoodChatProfileDraft | null; activityDraft?: FoodChatActivityDraft | null; activityGoalDraft?: FoodChatActivityGoalDraft | null; pending: boolean; quota: PhotoAnalysisStatus;
 };
 
 export function macroCalorieEstimate(values: Pick<FoodInput, "calories" | "protein" | "carbs" | "fat">) {

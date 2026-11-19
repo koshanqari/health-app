@@ -1475,6 +1475,9 @@ test("activity date selection stays aligned with chart, totals and entries durin
 
 test("Home shows a compact apple greeting, activity before food, persistent setup and live totals", async ({ page }, info) => {
   await db.execute('DELETE FROM "userProfile" WHERE "userId"=$1', [memberId]);
+  await db.execute('DELETE FROM "foodGoalVersion" WHERE "userId"=$1', [memberId]);
+  await db.execute('DELETE FROM "foodGoal" WHERE "userId"=$1', [memberId]);
+  await db.execute('DELETE FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]);
   await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
   await db.execute('DELETE FROM "foodEntry" WHERE "userId"=$1', [memberId]);
   await page.goto("/login");
@@ -1494,7 +1497,7 @@ test("Home shows a compact apple greeting, activity before food, persistent setu
   const appleBox = (await page.locator(".home-apple").boundingBox())!, greetingBox = (await page.locator(".home-greeting h1").boundingBox())!;
   expect(appleBox.x).toBeGreaterThan(greetingBox.x + greetingBox.width);
   expect((await activity.boundingBox())!.y).toBeLessThan((await food.boundingBox())!.y);
-  await setup.getByRole("button", { name: "Set up profile", exact: true }).click();
+  await setup.getByRole("button", { name: "Complete your profile", exact: true }).click();
   const profile = page.getByRole("dialog", { name: "Profile", exact: true });
   await profile.getByLabel("Age (years)", { exact: true }).fill("30");
   await profile.getByLabel("Height (cm)", { exact: true }).fill("175");
@@ -1503,6 +1506,17 @@ test("Home shows a compact apple greeting, activity before food, persistent setu
   await profile.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(profile.getByRole("status")).toHaveText("Profile saved.");
   await profile.getByRole("button", { name: "Back to app", exact: true }).click();
+  await expect(setup.locator('li[data-complete="true"]')).toHaveCount(1);
+  await setup.getByRole("button", { name: "Set daily food goal", exact: true }).click();
+  const foodGoals = page.getByRole("dialog", { name: "Daily food goals", exact: true });
+  await foodGoals.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(foodGoals).not.toBeVisible();
+  await expect(setup.locator('li[data-complete="true"]')).toHaveCount(2);
+  await setup.getByRole("button", { name: "Set daily activity goal", exact: true }).click();
+  const activityGoals = page.getByRole("dialog", { name: "Daily activity goals", exact: true });
+  await activityGoals.getByLabel("Logged active calories", { exact: true }).fill("400");
+  await activityGoals.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(activityGoals).not.toBeVisible();
   await expect(setup).toHaveCount(0);
   await nav.getByRole("link", { name: "Activity", exact: true }).click();
   await page.getByRole("button", { name: "Log activity", exact: true }).click();
@@ -1531,4 +1545,45 @@ test("Home shows a compact apple greeting, activity before food, persistent setu
   await expect(profile.getByRole("status")).toHaveText("Profile saved.");
   await profile.getByRole("button", { name: "Back to app", exact: true }).click();
   await expect(setup).toBeVisible(); await expect(setup).toContainText("Add your weight");
+});
+
+test("activity goal AI help keeps the date, prepares separate editable goals and updates Home setup", async ({ page }, info) => {
+  await db.execute('DELETE FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]);
+  let calls = 0;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    calls++;
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity_goals", reply: "Review the activity targets.", draft: null, goalDraft: null, profileDraft: null, activityDraft: null, activityGoalDraft: { goals: { calories: 400, steps: 8000, minutes: 30 }, effectiveFrom: localDateTime().slice(0,10), assumptions: "Based on the routine you described." } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } }) });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: "Set goals", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Daily activity goals", exact: true });
+  await form.getByLabel("Logged active calories", { exact: true }).fill("999");
+  await form.getByLabel("Apply from", { exact: true }).fill("2026-12-01");
+  await form.getByRole("button", { name: "Take help from AI", exact: true }).click();
+  await expect(form).not.toBeVisible();
+  await expect(nav.getByRole("link", { name: "AI", exact: true })).toHaveAttribute("aria-current", "page");
+  const composer = page.getByLabel("Your message", { exact: true });
+  await expect(composer).toHaveValue(/daily activity goals.*2026-12-01/); expect(await composer.inputValue()).not.toContain("999"); expect(calls).toBe(0);
+  await composer.fill("Help me set daily activity goals for today. I usually walk 7000 steps and want gradual progress.");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("button", { name: "Review activity goals", exact: true }).click();
+  await expect(form.getByLabel("Steps", { exact: true })).toHaveValue("8000");
+  const [unsaved] = await db.execute('SELECT targets FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]); expect(unsaved).toHaveLength(0);
+  await form.getByLabel("Active minutes", { exact: true }).fill("40");
+  await form.getByRole("button", { name: "Save goals", exact: true }).click();
+  await expect(form).not.toBeVisible();
+  await expect(page.getByText("Your activity goals are saved.", { exact: true })).toBeVisible();
+  const [saved] = await db.execute('SELECT targets FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]); expect(saved).toHaveLength(1); expect(saved[0].targets.minutes).toBe(40);
+  await nav.getByRole("link", { name: "Home", exact: true }).click();
+  const setup = page.getByRole("region", { name: "Profile setup", exact: true });
+  // The preceding Home scenario clears weight, so the checklist remains with goals marked done.
+  await expect(setup.getByRole("button", { name: "Set daily activity goal", exact: true })).toContainText("Completed");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-home-setup-goals.png`, fullPage: true });
+  await setup.getByRole("button", { name: "Set daily activity goal", exact: true }).click();
+  await form.getByRole("button", { name: "Take help from AI", exact: true }).click();
+  await expect(composer).toHaveValue(/daily activity goals/); expect(calls).toBe(1);
 });

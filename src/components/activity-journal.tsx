@@ -3,8 +3,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMemberFetch, useViewingAs } from "./member-view";
 import { ChevronIcon } from "./app-header";
 import { FoodHistory } from "./food-history";
-import { localDateTime, nextFoodDate } from "@/lib/food";
-import { activityTypes, activityLabels, activityDetails, activityFacts, activityMetrics, distanceActivities, stepActivities, resolveActivity, parseActivityGoals, type ActivityFacts, type ActivityEntry, type ActivityInput, type ActivityProfile, type ActivityJournalData } from "@/lib/activity";
+import { isFoodDate, localDateTime, nextFoodDate } from "@/lib/food";
+import { activityTypes, activityLabels, activityDetails, activityFacts, activityMetrics, distanceActivities, stepActivities, resolveActivity, parseActivityGoals, type ActivityGoals, type ActivityFacts, type ActivityEntry, type ActivityInput, type ActivityProfile, type ActivityJournalData } from "@/lib/activity";
 const format = (value: number | null) => value === null ? "Not estimated" : new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 const metricLabels = { calories: "Logged active calories", steps: "Steps", minutes: "Active minutes" };
 
@@ -60,14 +60,14 @@ export function ActivityForm({ entry, draft, profile, date, onClose, onSaved, on
   </dialog>;
 }
 
-export function ActivityJournal({ active, onOpenProfile, onAskAI }: { active: boolean; onOpenProfile: () => void; onAskAI?: () => void }) {
+export function ActivityJournal({ active, onOpenProfile, onAskAI, onAskAIGoals }: { onAskAIGoals?: (date: string) => void; active: boolean; onOpenProfile: () => void; onAskAI?: () => void }) {
   const fetch = useMemberFetch(), viewingAs = useViewingAs();
   const [date, setDate] = useState(() => localDateTime().slice(0, 10)), [data, setData] = useState<ActivityJournalData | null>(null), [error, setError] = useState("");
   const [revision, setRevision] = useState(0), [form, setForm] = useState<ActivityEntry | "new" | null>(null), [goalsOpen, setGoalsOpen] = useState(false), [deleting, setDeleting] = useState<string | null>(null);
   const cache = useRef(new Map<string, { value: ActivityJournalData; at: number }>());
   const visibleData = data?.day.date === date ? data : null;
   function refresh() { window.dispatchEvent(new Event("daywell-summary-changed")); cache.current.clear(); setRevision(value => value + 1); }
-  useEffect(() => { window.addEventListener("activity-saved", refresh); window.addEventListener("profile-saved", refresh); return () => { window.removeEventListener("activity-saved", refresh); window.removeEventListener("profile-saved", refresh); }; }, []);
+  useEffect(() => { window.addEventListener("activity-saved", refresh); window.addEventListener("profile-saved", refresh); window.addEventListener("activity-goals-saved", refresh); return () => { window.removeEventListener("activity-saved", refresh); window.removeEventListener("profile-saved", refresh); window.removeEventListener("activity-goals-saved", refresh); }; }, []);
   useEffect(() => {
     if (!active) return;
     const previous = cache.current.get(date); setData(previous?.value ?? null); setError("");
@@ -90,11 +90,42 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI }: { active: bo
     {!visibleData.entries.length && <p className="photo-estimate-note">No activity logged for this day. Start with a walk, a game or a workout.</p>}
     <div className="activity-entries">{visibleData.entries.map(entry => <article key={entry.id}><div><h3>{entry.name}</h3><p>{entry.calories === null ? "Calories not estimated" : `${format(entry.calories)} kcal`} · {entry.stepScope === "daily_total" ? "Daily step total" : entry.calorieSource === "estimated" ? "Estimated" : entry.calorieSource === "device" ? "Device" : entry.calorieSource === "not_estimated" ? "Steps only" : "Entered"}{entry.durationMinutes !== null ? ` · ${format(entry.durationMinutes)} min` : ""}{entry.distanceKm !== null ? ` · ${format(entry.distanceKm)} km` : ""}{entry.steps !== null ? ` · ${format(entry.steps)} steps` : ""}</p><small>{entry.occurredAtLocal.slice(11)} · {activityLabels[entry.type]}</small>{entry.notes && <p>{entry.notes}</p>}</div><div className="activity-entry-actions"><button className="text-button" disabled={!!viewingAs || !!deleting} onClick={() => setForm(entry)}>Edit</button><button className="text-button" disabled={!!viewingAs || !!deleting} onClick={() => remove(entry)}>{deleting === entry.id ? "Deleting…" : "Delete"}</button></div></article>)}</div></>}
     {form && <ActivityForm entry={form === "new" ? null : form} profile={data?.profile ?? { weightKg: null, age: null }} date={date} onClose={() => setForm(null)} onOpenProfile={onOpenProfile} onSaved={value => { setForm(null); setDate(value); refresh(); }} />}
-    {goalsOpen && <ActivityGoalForm data={data} date={date} onClose={() => setGoalsOpen(false)} onSaved={() => { setGoalsOpen(false); refresh(); }} />}
+    {goalsOpen && <ActivityGoalForm goals={visibleData?.goals ?? null} date={date} onAskAI={onAskAIGoals ? effectiveFrom => { setGoalsOpen(false); onAskAIGoals(effectiveFrom); } : undefined} onClose={() => setGoalsOpen(false)} onSaved={() => { setGoalsOpen(false); refresh(); }} />}
   </section>;
 }
-function ActivityGoalForm({ data, date, onClose, onSaved }: { data: ActivityJournalData | null; date: string; onClose: () => void; onSaved: () => void }) {
-  const fetch = useMemberFetch(), dialog = useRef<HTMLDialogElement>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
+export function ActivityGoalForm({ goals, date, onClose, onSaved, onAskAI, saveGoals }: {
+  goals: ActivityGoals | null; date: string; onClose: () => void; onSaved: (date: string) => void;
+  onAskAI?: (date: string) => void; saveGoals?: (goals: ActivityGoals, effectiveFrom: string) => Promise<void>;
+}) {
+  const fetch = useMemberFetch(), viewingAs = useViewingAs(), dialog = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(date);
   useEffect(() => { const el = dialog.current!; el.showModal(); return () => el.close(); }, []);
-  return <dialog ref={dialog} className="food-dialog" aria-labelledby="activity-goal-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}><div className="food-form-heading"><h2 id="activity-goal-title">Daily activity goals</h2><button className="dialog-close" aria-label="Close goals" disabled={busy} onClick={onClose}>×</button></div><form onSubmit={async event => { event.preventDefault(); if (busy) return; const form = new FormData(event.currentTarget); setError(""); setBusy(true); try { const goals = parseActivityGoals(Object.fromEntries(activityMetrics.map(metric => [metric, form.get(metric) === "" ? null : Number(form.get(metric))]))); const response = await fetch("/api/activity", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goals, effectiveFrom: form.get("effectiveFrom") }) }); const body = await response.json(); if (!response.ok) throw new Error(body.message); onSaved(); } catch (error) { setError(error instanceof Error ? error.message : "Couldn’t save goals."); } finally { setBusy(false); } }}><div className="food-form-body"><p>Reach at least these amounts each day. Leave a field empty to skip that goal.</p><fieldset className="food-details" disabled={busy}><div className="food-input-group">{activityMetrics.map(metric => <div className="nutrition-row" key={metric}><label htmlFor={"goal-" + metric}>{metricLabels[metric]}</label><input id={"goal-" + metric} name={metric} type="number" min={metric === "steps" ? 1 : .01} max={metric === "steps" ? 200000 : metric === "minutes" ? 1440 : 100000} step={metric === "steps" ? 1 : .01} defaultValue={data?.goals?.[metric] ?? ""} placeholder="Optional" /></div>)}<div className="food-detail-row"><label htmlFor="activity-goal-date">Apply from</label><input id="activity-goal-date" name="effectiveFrom" type="date" required min="2000-01-01" max="2100-12-31" defaultValue={date} /></div></div></fieldset><p className="photo-estimate-note">Earlier days keep their goals. Saving the same start date updates that goal.</p>{error && <p className="form-error" role="alert">{error}</p>}</div><div className="food-form-actions"><button type="button" className="cancel-food-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? "Saving…" : "Save goals"}</button></div></form></dialog>;
+  return <dialog ref={dialog} className="food-dialog" aria-labelledby="activity-goal-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+    <div className="food-form-heading"><h2 id="activity-goal-title">Daily activity goals</h2><button className="dialog-close" aria-label="Close goals" disabled={busy} onClick={onClose}>×</button></div>
+    <form onSubmit={async event => {
+      event.preventDefault(); if (busy || viewingAs || !isFoodDate(effectiveFrom)) return;
+      const form = new FormData(event.currentTarget); setError(""); setBusy(true);
+      try {
+        const targets = parseActivityGoals(Object.fromEntries(activityMetrics.map(metric => [metric, form.get(metric) === "" ? null : Number(form.get(metric))])));
+        if (saveGoals) await saveGoals(targets, effectiveFrom);
+        else {
+          const response = await fetch("/api/activity", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goals: targets, effectiveFrom }) });
+          const body = await response.json(); if (!response.ok) throw new Error(body.message);
+        }
+        onSaved(effectiveFrom);
+      } catch (error) { setError(error instanceof Error ? error.message : "Couldn’t save goals."); }
+      finally { setBusy(false); }
+    }}>
+      <div className="food-form-body"><p>Reach at least these amounts each day. Leave a field empty to skip that goal.</p>
+        {onAskAI && !viewingAs && <button type="button" className="text-button" disabled={busy} onClick={() => onAskAI(isFoodDate(effectiveFrom) ? effectiveFrom : localDateTime().slice(0, 10))}>Take help from AI</button>}
+        <fieldset className="food-details" disabled={busy || !!viewingAs}><div className="food-input-group">
+          {activityMetrics.map(metric => <div className="nutrition-row" key={metric}><label htmlFor={"goal-" + metric}>{metricLabels[metric]}</label><input id={"goal-" + metric} name={metric} type="number" min={metric === "steps" ? 1 : .01} max={metric === "steps" ? 200000 : metric === "minutes" ? 1440 : 100000} step={metric === "steps" ? 1 : .01} defaultValue={goals?.[metric] ?? ""} placeholder="Optional" /></div>)}
+          <div className="food-detail-row"><label htmlFor="activity-goal-date">Apply from</label><input id="activity-goal-date" name="effectiveFrom" type="date" required min="2000-01-01" max="2100-12-31" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} /></div>
+        </div></fieldset><p className="photo-estimate-note">Earlier days keep their goals. Saving the same start date updates that goal.</p>
+        {error && <p className="form-error" role="alert">{error}</p>}
+      </div>
+      <div className="food-form-actions"><button type="button" className="cancel-food-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy || !!viewingAs || !isFoodDate(effectiveFrom)}>{busy ? "Saving…" : "Save goals"}</button></div>
+    </form>
+  </dialog>;
 }

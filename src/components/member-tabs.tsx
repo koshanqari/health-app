@@ -52,6 +52,12 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
     selectTab("chat");
   }
 
+  function askAIForActivityGoals(effectiveFrom: string) {
+    setAiStarter({ id: Date.now(), prompt: "Help me set daily activity goals for active calories burned, steps and active minutes, applying from " + effectiveFrom + ". Use my saved profile, ask about my usual activity and any missing details, then prepare an activity goal proposal I can review and save." });
+    window.history.pushState(null, "", "/app?tab=chat");
+    selectTab("chat");
+  }
+
   function openProfile() {
     const url = new URL(window.location.href);
     url.searchParams.set("profile", "1");
@@ -92,10 +98,10 @@ export function MemberTabs({ name, initialAvatarId = null, isAdmin, initialTab, 
       <ViewingBanner />
       <main id="main-content" className={tab === "chat" ? "workspace-main member-main ai-main" : "workspace-main member-main"}>
         {notice}
-        <div hidden={tab !== "home"}><HomeDashboard active={tab === "home"} name={displayName} initialProfile={initialProfile} onOpenProfile={openProfile} /></div>
+        <div hidden={tab !== "home"}><HomeDashboard active={tab === "home"} name={displayName} initialProfile={initialProfile} onOpenProfile={openProfile} onAskFoodAI={viewingAs ? undefined : askAIForGoals} onAskActivityAI={viewingAs ? undefined : askAIForActivityGoals} /></div>
         <div hidden={tab !== "chat"}><FoodChat active={tab === "chat"} starter={aiStarter} /></div>
         <div hidden={tab !== "food"}><FoodJournal active={tab === "food"} onAskAI={viewingAs ? undefined : askAIForGoals} /></div>
-        <div hidden={tab !== "activity"}><ActivityJournal active={tab === "activity"} onOpenProfile={openProfile} onAskAI={viewingAs ? undefined : () => { setAiStarter({ id: Date.now(), prompt: "Help me log an activity. Use my saved profile and ask for the activity, duration and any other details needed. Prepare a proposal I can review and save." }); window.history.pushState(null, "", "/app?tab=chat"); selectTab("chat"); }} /></div>
+        <div hidden={tab !== "activity"}><ActivityJournal active={tab === "activity"} onOpenProfile={openProfile} onAskAIGoals={viewingAs ? undefined : askAIForActivityGoals} onAskAI={viewingAs ? undefined : () => { setAiStarter({ id: Date.now(), prompt: "Help me log an activity. Use my saved profile and ask for the activity, duration and any other details needed. Prepare a proposal I can review and save." }); window.history.pushState(null, "", "/app?tab=chat"); selectTab("chat"); }} /></div>
         <div hidden={tab !== "progress"}>{progress}</div>
       </main>
     </AppShell>

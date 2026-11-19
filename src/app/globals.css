@@ -658,3 +658,15 @@ h1, h2, h3 { line-height: 1.2; }
 .home-metrics dd { margin:5px 0 0; font-size:24px; font-weight:800; line-height:1.3; }
 .home-metrics small { color:var(--muted); font-size:13px; font-weight:500; }
 @media(max-width:600px) { .home-greeting { gap:10px; margin-bottom:24px; } .home-apple { width:86px; height:100px; } .home-greeting h1 { font-size:34px; } .home-daily-note { font-size:14px; margin-top:10px; } .home-profile-setup { padding:16px; gap:10px; flex-wrap:wrap; } .home-profile-setup p { font-size:12px; } .home-profile-setup .text-button { padding:4px 0; } .home-today { padding:22px; border-radius:22px; margin-bottom:18px; } .home-section-heading h2 { font-size:18px; } .home-section-heading a { font-size:12px; } .home-total strong { font-size:42px; } .home-metrics { gap:10px; } .home-metrics dd { font-size:22px; } }
+.home-setup-checklist { display:block; padding:18px 22px 8px; }
+.home-setup-checklist ol { list-style:none; padding:0; margin:8px 0 0; }
+.home-setup-checklist li+li { border-top:1px solid var(--line); }
+.home-setup-checklist li button { display:flex; align-items:center; gap:12px; width:100%; border:0; padding:13px 0; background:transparent; text-align:left; color:var(--ink); }
+.home-setup-number { display:flex; align-items:center; justify-content:center; width:27px; height:27px; flex-shrink:0; border:1px solid var(--line); border-radius:50%; color:var(--muted); font-size:12px; }
+.home-setup-number svg { width:18px; height:18px; }
+.home-setup-copy { flex:1; min-width:0; }
+.home-setup-copy strong { display:block; font-size:14px; font-weight:750; }
+.home-setup-copy small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+.home-setup-state { color:var(--accent-text); font-size:12px; font-weight:750; flex-shrink:0; }
+.home-setup-checklist li[data-complete="true"] .home-setup-number { color:var(--accent-text); background:var(--selected); border-color:transparent; }
+@media(max-width:600px) { .home-setup-checklist { padding:16px 16px 5px; } .home-setup-copy strong { font-size:13px; } .home-setup-copy small { font-size:11px; } .home-setup-checklist li button { gap:10px; } .home-setup-state { font-size:11px; } }

@@ -2,8 +2,8 @@ import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { db } from "../src/lib/db";
-import { activityTypes, activityDetails, activityFacts, parseActivityFacts, parseActivityGoals, prepareActivityChatProposal, resolveActivity } from "../src/lib/activity";
-import { confirmFoodChatActivity, getFoodChat, resetFoodChat, sendFoodChat } from "../src/lib/food-chat";
+import { activityTypes, activityDetails, activityFacts, parseActivityFacts, parseActivityGoalChange, parseActivityGoals, prepareActivityChatProposal, resolveActivity } from "../src/lib/activity";
+import { confirmFoodChat, confirmFoodChatActivityGoals, confirmFoodChatActivity, getFoodChat, resetFoodChat, sendFoodChat } from "../src/lib/food-chat";
 import type { FoodAiSettings } from "../src/lib/food-ai";
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
 const users: { id: string; cookie: string }[] = [];
@@ -218,4 +218,37 @@ test("Home totals are private, date-specific and use the same activity overlap c
   const token = new URL((await view.json()).url, base).searchParams.get("view");
   const viewed = await (await request("GET", undefined, 0, "/api/home?date=" + date + "&view=" + token)).json();
   assert.deepEqual(viewed, other);
+});
+
+test("activity goal proposals validate independently, retain dated targets and save only on confirmation", async () => {
+  assert.throws(() => parseActivityGoalChange({ goals: { steps: 8000.5 }, effectiveFrom: "2026-11-19" }));
+  assert.throws(() => parseActivityGoalChange({ goals: { calories: -1 }, effectiveFrom: "2026-11-19" }));
+  assert.throws(() => parseActivityGoalChange({ goals: { minutes: 30 }, effectiveFrom: "2026-02-30" }));
+  await resetFoodChat(users[0].id, { settings });
+  await request("PUT", { goals: { calories: 200 }, effectiveFrom: "2026-10-01" });
+  const foodBefore = await (await request("GET", undefined, 0, "/api/food?date=2026-11-01")).json();
+  const [activityBefore] = await db.execute('SELECT COUNT(*)::int AS count FROM "activityEntry" WHERE "userId"=$1', [users[0].id]);
+  let calls = 0;
+  const options = { settings, fetcher: (async (_url, init) => {
+    calls++; const body = JSON.parse(String(init?.body)); assert.ok(body.systemInstruction.parts[0].text.includes("DAILY ACTIVITY GOALS"));
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity_goals", reply: "Review your activity goals.", draft: null, goalDraft: null, profileDraft: null, activityDraft: null, activityGoalDraft: { goals: { calories: 400, steps: calls === 1 ? 8000 : 9000, minutes: 30 }, effectiveFrom: "2026-11-01", assumptions: "The targets you requested." } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+  }) as typeof fetch };
+  const initial = await getFoodChat(users[0].id, options);
+  const first = await sendFoodChat(users[0].id, { requestId: randomUUID(), version: initial.version, text: "Set daily activity goals: 400 active calories, 8000 steps and 30 minutes from Nov 1", timeZone: "Asia/Kolkata" }, options);
+  assert.equal(first.draft, null); assert.equal(first.goalDraft, null); assert.equal(first.activityDraft, null); assert.ok(first.activityGoalDraft);
+  const read = await getFoodChat(users[0].id, options); assert.equal(read.activityGoalDraft!.draftId, first.activityGoalDraft!.draftId);
+  assert.equal((await (await request("GET", undefined, 0, "/api/activity?date=2026-11-01")).json()).goals.calories, 200);
+  await assert.rejects(confirmFoodChatActivityGoals(users[1].id, first.activityGoalDraft!.draftId, { goals: first.activityGoalDraft!.goals, effectiveFrom: "2026-11-01" }, options));
+  await assert.rejects(confirmFoodChat(users[0].id, first.activityGoalDraft!.draftId, { calories: 400, protein: 20, fat: 10, carbs: 30 }, options));
+  const revised = await sendFoodChat(users[0].id, { requestId: randomUUID(), version: first.version, text: "Make it 9000 steps", timeZone: "Asia/Kolkata" }, options), draft = revised.activityGoalDraft!;
+  assert.equal(revised.messages.find(message => message.id === first.activityGoalDraft!.draftId)!.payload.state, "superseded");
+  await assert.rejects(confirmFoodChatActivityGoals(users[0].id, first.activityGoalDraft!.draftId, { goals: first.activityGoalDraft!.goals, effectiveFrom: "2026-11-01" }, options));
+  const change = { goals: { ...draft.goals, minutes: 40 }, effectiveFrom: "2026-11-01" };
+  await Promise.all([confirmFoodChatActivityGoals(users[0].id, draft.draftId, change, options), confirmFoodChatActivityGoals(users[0].id, draft.draftId, change, options)]);
+  assert.equal((await (await request("GET", undefined, 0, "/api/activity?date=2026-10-20")).json()).goals.calories, 200);
+  const saved = (await (await request("GET", undefined, 0, "/api/activity?date=2026-11-01")).json()).goals; assert.deepEqual(saved, change.goals);
+  const foodAfter = await (await request("GET", undefined, 0, "/api/food?date=2026-11-01")).json(); assert.deepEqual(foodAfter.goals, foodBefore.goals); assert.equal(foodAfter.day.entries, foodBefore.day.entries);
+  const [activityAfter] = await db.execute('SELECT COUNT(*)::int AS count FROM "activityEntry" WHERE "userId"=$1', [users[0].id]); assert.equal(activityBefore[0].count, activityAfter[0].count);
+  const view = await request("POST", { userId: users[1].id }, 0, "/api/admin/views"), token = new URL((await view.json()).url, base).searchParams.get("view");
+  assert.equal((await request("PATCH", { draftId: draft.draftId, activityGoals: change }, 0, "/api/food/chat?view=" + token)).status, 403);
 });

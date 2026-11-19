@@ -1,6 +1,6 @@
 "use client";
 
-import { ActivityForm } from "./activity-journal";
+import { ActivityGoalForm, ActivityForm } from "./activity-journal";
 import { ProfileProposal } from "./profile-proposal";
 import type { ProfileChange } from "@/lib/profile";
 import { useMemberFetch, useViewingAs } from "./member-view";
@@ -13,7 +13,7 @@ import { GoalForm } from "./food-goals";
 import { goalNutrients } from "@/lib/food-goals";
 import { FoodForm } from "./food-journal";
 import { foodRequestId, prepareFoodPhoto } from "@/lib/food-photo-client";
-import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, type FoodChatPhotoMode, macroCalorieEstimate, type FoodChatActivityDraft, type FoodChatGoalDraft, type FoodChatDraft, type FoodChatMessage, type FoodChatState, type FoodInput } from "@/lib/food";
+import { MAX_CHAT_PHOTOS, MAX_CHAT_PHOTO_BYTES, type FoodChatPhotoMode, macroCalorieEstimate, type FoodChatActivityGoalDraft, type FoodChatActivityDraft, type FoodChatGoalDraft, type FoodChatDraft, type FoodChatMessage, type FoodChatState, type FoodInput } from "@/lib/food";
 
 const numbers = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const dates = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" });
@@ -36,6 +36,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [optimistic, setOptimistic] = useState<FoodChatMessage | null>(null);
+  const [activityGoalReview, setActivityGoalReview] = useState<FoodChatActivityGoalDraft | null>(null);
   const [activityReview, setActivityReview] = useState<FoodChatActivityDraft | null>(null);
   const [goalReview, setGoalReview] = useState<FoodChatGoalDraft | null>(null);
   const usedStarter = useRef<number | null>(null);
@@ -71,13 +72,13 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
         const response = await fetch("/api/food/chat", { method: "DELETE" });
         const next = await response.json();
         if (!response.ok) throw new Error(next.message || "We couldn’t start a new chat.");
-        selection.current++; setPreparing(false); clearComposer(); setReview(null); setGoalReview(null); setActivityReview(null); setNotice(""); scrollToEnd.current = true; apply(next);
+        selection.current++; setPreparing(false); clearComposer(); setReview(null); setGoalReview(null); setActivityReview(null); setActivityGoalReview(null); setNotice(""); scrollToEnd.current = true; apply(next);
       } else await refresh();
     } catch (error) { setError(error instanceof Error ? error.message : "We couldn’t load the conversation."); }
     finally { setLoading(false); }
   }
   useEffect(() => { if (active && !initial.current) { initial.current = true; void load(true); } }, [active]);
-  useEffect(() => { if (!active) { setReview(null); setGoalReview(null); setActivityReview(null); } }, [active]);
+  useEffect(() => { if (!active) { setReview(null); setGoalReview(null); setActivityReview(null); setActivityGoalReview(null); } }, [active]);
   useEffect(() => {
     if (!active || loading || busy || !state || state.pending || !starter || usedStarter.current === starter.id) return;
     usedStarter.current = starter.id;
@@ -103,11 +104,11 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
     const guard = (event: Event) => {
       const detail = (event as CustomEvent<UpdateGuard>).detail;
       detail.busy ||= busy || loading || preparing || !!state?.pending;
-      detail.dirty ||= !!text.trim() || photos.length > 0 || !!state?.draft || !!state?.goalDraft || !!state?.profileDraft || !!state?.activityDraft || !!activityReview || !!review || !!goalReview;
+      detail.dirty ||= !!text.trim() || photos.length > 0 || !!state?.draft || !!state?.goalDraft || !!state?.profileDraft || !!state?.activityGoalDraft || !!activityGoalReview || !!state?.activityDraft || !!activityReview || !!review || !!goalReview;
     };
     window.addEventListener("daywell-update-guard", guard);
     return () => window.removeEventListener("daywell-update-guard", guard);
-  }, [busy, loading, preparing, state?.pending, state?.draft, state?.goalDraft, state?.profileDraft, state?.activityDraft, activityReview, text, photos.length, review, goalReview]);
+  }, [busy, loading, preparing, state?.pending, state?.draft, state?.goalDraft, state?.profileDraft, state?.activityGoalDraft, activityGoalReview, state?.activityDraft, activityReview, text, photos.length, review, goalReview]);
 
   useEffect(() => {
     if (!active || !state || busy || loading || preparing || state.pending) return;
@@ -208,11 +209,12 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
       <div className="chat-thread" ref={thread} role="log" aria-label="Conversation with Kay" aria-live="polite" onScroll={() => { const element = thread.current; if (element) scrollToEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
         {loading && <p className="chat-status" role="status">Loading your conversation…</p>}
         {state && messages.length === 0 && !visibleOptimistic && <div className="chat-empty"><h2>Hi, I’m Kay.</h2><p>Start with a message or a few photos.</p><div className="chat-suggestions">{["I had poha and chai for breakfast", "Show today’s logged totals"].map(example => <button type="button" disabled={!!viewingAs} key={example} onClick={() => { setText(example); input.current?.focus(); }}>{example}</button>)}</div></div>}
-        {messages.map(message => <ChatMessage activeActivityDraft={state?.activityDraft?.draftId} onReviewActivity={setActivityReview} key={message.id} activeProfileDraft={state?.profileDraft?.draftId} onSaveProfile={saveProfileProposal} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting || !!viewingAs} onReview={setReview} />)}
+        {messages.map(message => <ChatMessage activeActivityGoalDraft={state?.activityGoalDraft?.draftId} onReviewActivityGoals={setActivityGoalReview} activeActivityDraft={state?.activityDraft?.draftId} onReviewActivity={setActivityReview} key={message.id} activeProfileDraft={state?.profileDraft?.draftId} onSaveProfile={saveProfileProposal} message={message} activeGoalDraft={state?.goalDraft?.draftId} onReviewGoals={setGoalReview} activeDraft={state?.draft?.draftId} busy={waiting || !!viewingAs} onReview={setReview} />)}
         {state?.draft && !messages.some(message => message.id === state.draft!.draftId) && <ChatMessage message={{ id: state.draft.draftId, requestId: state.draft.draftId, sequence: 0, role: "assistant", content: "Your meal draft is still ready to review.", createdAt: "", payload: { state: "ready", draft: state.draft } }} activeDraft={state.draft.draftId} busy={waiting || !!viewingAs} onReview={setReview} />}
         {state?.goalDraft && !messages.some(message => message.id === state.goalDraft!.draftId) && <ChatMessage message={{ id: state.goalDraft.draftId, requestId: state.goalDraft.draftId, sequence: 0, role: "assistant", content: "Your goal proposal is still ready to review.", createdAt: "", payload: { state: "ready", goalDraft: state.goalDraft } }} activeGoalDraft={state.goalDraft.draftId} busy={waiting || !!viewingAs} onReview={setReview} onReviewGoals={setGoalReview} />}
         {state?.profileDraft && !messages.some(message => message.id === state.profileDraft!.draftId) && <ChatMessage activeProfileDraft={state.profileDraft.draftId} onSaveProfile={saveProfileProposal} message={{ id: state.profileDraft.draftId, requestId: state.profileDraft.draftId, sequence: 0, role: "assistant", content: "Your profile update is ready to review.", createdAt: "", payload: { state: "ready", profileDraft: state.profileDraft } }} busy={waiting || !!viewingAs} onReview={setReview} />}
-        {state?.activityDraft && !messages.some(message => message.id === state.activityDraft!.draftId) && <ChatMessage activeActivityDraft={state.activityDraft.draftId} onReviewActivity={setActivityReview} message={{ id: state.activityDraft.draftId, requestId: state.activityDraft.draftId, sequence: 0, role: "assistant", content: "Your activity is ready to review.", createdAt: "", payload: { state: "ready", activityDraft: state.activityDraft } }} busy={waiting || !!viewingAs} onReview={setReview} />}
+        {state?.activityDraft && !messages.some(message => message.id === state.activityDraft!.draftId) && <ChatMessage activeActivityGoalDraft={state?.activityGoalDraft?.draftId} onReviewActivityGoals={setActivityGoalReview} activeActivityDraft={state.activityDraft.draftId} onReviewActivity={setActivityReview} message={{ id: state.activityDraft.draftId, requestId: state.activityDraft.draftId, sequence: 0, role: "assistant", content: "Your activity is ready to review.", createdAt: "", payload: { state: "ready", activityDraft: state.activityDraft } }} busy={waiting || !!viewingAs} onReview={setReview} />}
+        {state?.activityGoalDraft && !messages.some(message => message.id === state.activityGoalDraft!.draftId) && <ChatMessage activeActivityGoalDraft={state.activityGoalDraft.draftId} onReviewActivityGoals={setActivityGoalReview} message={{ id: state.activityGoalDraft.draftId, requestId: state.activityGoalDraft.draftId, sequence: 0, role: "assistant", content: "Your activity goals are ready to review.", createdAt: "", payload: { state: "ready", activityGoalDraft: state.activityGoalDraft } }} busy={waiting || !!viewingAs} onReview={setReview} />}
         {visibleOptimistic && <ChatMessage message={optimistic} busy activeDraft={undefined} onReview={setReview} />}
         {waiting && <p className="chat-typing" role="status">Working on your reply… <span>You can switch tabs.</span></p>}
       </div>
@@ -228,6 +230,15 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
         <div className="chat-composer-bottom"><div className="chat-attach-buttons"><label className="chat-icon-button" title="Take food photo"><ComposerIcon camera /><span className="sr-only">Take food photo</span><input className="sr-only" type="file" capture="environment" accept="image/*" aria-label="Take food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label><label className="chat-icon-button" title="Upload food photo"><ComposerIcon /><span className="sr-only">Upload food photo</span><input className="sr-only" type="file" accept="image/*" multiple aria-label="Upload food photo" disabled={waiting || loading || preparing || !state?.quota.configured} onChange={choose} /></label></div><p className="chat-allowance">{preparing ? "Preparing photo…" : state ? !state.quota.configured ? "AI logging isn’t connected yet." : limited ? creditLimited ? "Add credits to continue with Kay." : state.quota.remainingBudgetUsd < .01 ? "Kay’s shared spending limit is reached. Your credits are unchanged." : "Kay’s shared daily limit is reached. Your credits are unchanged." : "" : ""}</p><button className="chat-send" type="submit" aria-label="Send message" disabled={!canSend}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg></button></div>
       </form>}
     </div>
+    {activityGoalReview && <ActivityGoalForm goals={activityGoalReview.goals} date={activityGoalReview.effectiveFrom} onClose={() => setActivityGoalReview(null)} saveGoals={async (goals, effectiveFrom) => {
+      setBusy(true);
+      try {
+        const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: activityGoalReview.draftId, activityGoals: { goals, effectiveFrom } }) });
+        const next = await response.json();
+        if (!response.ok) { void refresh().catch(() => {}); throw new Error(next.message || "Couldn’t save activity goals."); }
+        apply(next);
+      } finally { setBusy(false); }
+    }} onSaved={() => { setActivityGoalReview(null); setNotice("Your activity goals are saved."); window.dispatchEvent(new Event("activity-goals-saved")); }} />}
     {activityReview && <ActivityForm draft={activityReview.activity} profile={{ weightKg: activityReview.activity.weightKg, age: activityReview.activity.ageSnapshot, heightCm: activityReview.activity.stepEstimate?.heightCm ?? null }} date={activityReview.activity.occurredAtLocal.slice(0, 10)} onClose={() => setActivityReview(null)} saveActivity={async activity => {
       setBusy(true);
       try {
@@ -236,13 +247,13 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
         if (!response.ok) { void refresh().catch(() => {}); throw new Error(next.message || "Couldn’t save activity."); }
         apply(next);
       } finally { setBusy(false); }
-    }} onSaved={() => { setActivityReview(null); setNotice("Saved to your activity journal."); window.dispatchEvent(new Event("activity-saved")); }} />}
+    }} onSaved={() => { setActivityReview(null); setActivityGoalReview(null); setNotice("Saved to your activity journal."); window.dispatchEvent(new Event("activity-saved")); }} />}
     {goalReview && <GoalForm goals={goalReview.goals} initialEffectiveFrom={goalReview.effectiveFrom} onClose={() => setGoalReview(null)} saveGoals={async (goals, effectiveFrom) => {
       const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: goalReview.draftId, goals: { ...goals, effectiveFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) });
       const next = await response.json();
       if (!response.ok) { void refresh().catch(() => {}); throw new Error(next.message || "We couldn’t save your goals. Try again."); }
       apply(next);
-    }} onSaved={() => { setGoalReview(null); setActivityReview(null); setNotice("Your food goals are saved."); window.dispatchEvent(new Event("food-goals-saved")); }} />}
+    }} onSaved={() => { setGoalReview(null); setActivityReview(null); setActivityGoalReview(null); setNotice("Your food goals are saved."); window.dispatchEvent(new Event("food-goals-saved")); }} />}
     {review && <FoodForm entry={null} draft={review} date={review.eatenAtLocal.slice(0, 10)} draftLabel="Food estimate" saveLabel={review.targetEntryId ? "Save correction" : "Log meal"} onClose={() => setReview(null)} saveFood={async (food: FoodInput) => {
       const response = await fetch("/api/food/chat", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId: review.draftId, food }) });
       const next = await response.json();
@@ -252,7 +263,7 @@ export function FoodChat({ active, starter }: { active: boolean; starter?: { id:
   </section>;
 }
 
-const ChatMessage = memo(function ChatMessage({ activeActivityDraft, onReviewActivity, message, activeDraft, activeGoalDraft, activeProfileDraft, onSaveProfile, busy, onReview, onReviewGoals }: { activeActivityDraft?: string; onReviewActivity?: (draft: FoodChatActivityDraft) => void; message: FoodChatMessage; activeProfileDraft?: string; onSaveProfile?: (id: string, changes: ProfileChange) => Promise<void>; activeDraft?: string; activeGoalDraft?: string; onReviewGoals?: (draft: FoodChatGoalDraft) => void; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
+const ChatMessage = memo(function ChatMessage({ activeActivityGoalDraft, onReviewActivityGoals, activeActivityDraft, onReviewActivity, message, activeDraft, activeGoalDraft, activeProfileDraft, onSaveProfile, busy, onReview, onReviewGoals }: { activeActivityGoalDraft?: string; onReviewActivityGoals?: (draft: FoodChatActivityGoalDraft) => void; activeActivityDraft?: string; onReviewActivity?: (draft: FoodChatActivityDraft) => void; message: FoodChatMessage; activeProfileDraft?: string; onSaveProfile?: (id: string, changes: ProfileChange) => Promise<void>; activeDraft?: string; activeGoalDraft?: string; onReviewGoals?: (draft: FoodChatGoalDraft) => void; busy: boolean; onReview: (draft: FoodChatDraft) => void }) {
   const { payload } = message, draft = payload.draft, goalDraft = payload.goalDraft;
   const photoCount = payload.photoCount ?? (payload.hasPhoto ? 1 : 0);
   const mismatch = draft ? macroCalorieEstimate(draft) : null;
@@ -261,6 +272,7 @@ const ChatMessage = memo(function ChatMessage({ activeActivityDraft, onReviewAct
     <div className="chat-message-content"><p className="chat-text">{message.content}</p>
       {photoCount > 0 && <span className="chat-photo-label"><ComposerIcon /> {photoCount === 1 ? "Photo attached" : `${photoCount} photos attached`}{photoCount > 1 && payload.photoMode === "angles" ? " · Same food, different angles" : photoCount > 1 && payload.photoMode === "meal" ? " · Different dishes" : ""}</span>}
       {payload.state === "failed" && <p className="chat-failed">Reply interrupted. Resend your message to try again.</p>}
+      {payload.activityGoalDraft && <div className="chat-food-draft" aria-label="Activity goal proposal"><div className="chat-draft-heading"><h3>Daily activity goals</h3><span>{payload.state === "logged" ? "Saved" : "Proposal"}</span></div><dl className="chat-nutrition">{(["calories", "steps", "minutes"] as const).map(metric => <div key={metric}><dt>{metric === "calories" ? "Active calories" : metric === "steps" ? "Steps" : "Active minutes"}</dt><dd>{payload.activityGoalDraft!.goals[metric] === null ? "Not set" : number(payload.activityGoalDraft!.goals[metric]!)} <small>{payload.activityGoalDraft!.goals[metric] === null ? "" : metric === "calories" ? "kcal" : metric === "minutes" ? "min" : "steps"}</small></dd></div>)}</dl><p className="chat-draft-meta">Apply from {dates.format(new Date(payload.activityGoalDraft.effectiveFrom + "T12:00"))}</p><p className="chat-assumptions">{payload.activityGoalDraft.assumptions}</p>{payload.state === "logged" ? <p className="chat-saved">Activity goals saved. <Link href="/app?tab=activity" prefetch={false}>View activity</Link></p> : activeActivityGoalDraft === payload.activityGoalDraft.draftId ? <button className="primary-button" disabled={busy} onClick={() => onReviewActivityGoals?.(payload.activityGoalDraft!)}>Review activity goals</button> : <p className="chat-old-draft">Earlier proposal · See the latest reply.</p>}</div>}
       {payload.activityDraft && <div className="chat-food-draft" aria-label="Activity proposal"><div className="chat-draft-heading"><h3>{payload.activityDraft.activity.name}</h3><span>{payload.state === "logged" ? "Logged" : "Proposal"}</span></div><p>{payload.activityDraft.activity.calories === null ? "Calories not estimated" : `${number(payload.activityDraft.activity.calories)} kcal active`}{payload.activityDraft.activity.durationMinutes ? ` · ${number(payload.activityDraft.activity.durationMinutes)} min` : ""}{payload.activityDraft.activity.steps !== null ? ` · ${number(payload.activityDraft.activity.steps)} steps` : ""}</p><p className="chat-assumptions">{payload.activityDraft.activity.assumptions}</p>{payload.state === "logged" ? <p className="chat-saved">Saved to your activity journal. <Link href="/app?tab=activity" prefetch={false}>View activity</Link></p> : activeActivityDraft === payload.activityDraft.draftId ? <button className="primary-button" disabled={busy} onClick={() => onReviewActivity?.(payload.activityDraft!)}>Review activity</button> : <p className="chat-old-draft">Earlier proposal · See the latest reply.</p>}</div>}
       {payload.profileDraft && <ProfileProposal key={payload.profileDraft.draftId + payload.state} draft={payload.profileDraft} active={activeProfileDraft === payload.profileDraft.draftId} saved={payload.state === "logged"} busy={busy} onSave={onSaveProfile ?? (async () => {})} />}
       {goalDraft && <div className="chat-food-draft chat-goal-draft" aria-label={payload.state === "logged" ? "Saved goals" : "Goal proposal"}>

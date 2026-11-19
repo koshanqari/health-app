@@ -169,3 +169,10 @@ function activityDetailQuestion(facts: ActivityFacts): string | null {
   };
   return questions[facts.type as keyof typeof questions] + duration;
 }
+
+export function parseActivityGoalChange(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Check your activity goals.");
+  const data = value as Record<string, unknown>;
+  if (!isFoodDate(data.effectiveFrom)) throw new Error("Choose a valid goal start date.");
+  return { goals: parseActivityGoals(data.goals), effectiveFrom: data.effectiveFrom };
+}
