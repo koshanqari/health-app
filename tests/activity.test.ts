@@ -2,7 +2,7 @@ import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { db } from "../src/lib/db";
-import { activityTypes, activityDetails, activityFacts, parseActivityFacts, parseActivityGoals, resolveActivity } from "../src/lib/activity";
+import { activityTypes, activityDetails, activityFacts, parseActivityFacts, parseActivityGoals, prepareActivityChatProposal, resolveActivity } from "../src/lib/activity";
 import { confirmFoodChatActivity, getFoodChat, resetFoodChat, sendFoodChat } from "../src/lib/food-chat";
 import type { FoodAiSettings } from "../src/lib/food-ai";
 const base = process.env.TEST_BASE_URL || "http://localhost:3001";
@@ -125,4 +125,39 @@ test("daily step total includes session steps and Kay updates the total instead 
   const saved = await (await request("GET", undefined, 0, "/api/activity?date=2026-11-09")).json();
   assert.equal(saved.entries.length, 2); assert.equal(saved.day.steps, 3500);
   const history = await (await request("GET", undefined, 0, "/api/activity?date=2026-11-09&period=M")).json(); assert.equal(history.days.find((day: any) => day.date === "2026-11-09").steps, 3500);
+});
+
+test("activity chat asks for missing effort or weight and discards model-computed calories", () => {
+  const facts = { type: "badminton", durationMinutes: 30, calorieSource: "estimated", occurredAtLocal: "2026-11-19T10:00" };
+  const profile = { age: 30, weightKg: 70 };
+  for (const detail of [null, "moderate", "recreational"]) {
+    const reply = prepareActivityChatProposal({ ...facts, detail }, profile, "Asia/Kolkata");
+    assert.match(reply.question!, /social\/casual or competitive/); assert.match(reply.question!, /30-minute/); assert.equal(reply.activity, undefined);
+  }
+  const missingWeight = prepareActivityChatProposal({ ...facts, detail: "social" }, { age: 30, weightKg: null }, "Asia/Kolkata"); assert.match(missingWeight.question!, /weight in kg/);
+  const estimate = prepareActivityChatProposal({ ...facts, detail: "social", calories: 9999 }, profile, "Asia/Kolkata");
+  assert.equal(estimate.activity?.calories, 165.38); assert.equal(estimate.activity?.durationMinutes, 30);
+  assert.equal(prepareActivityChatProposal({ ...facts, calories: 120, calorieSource: "device" }, { age: null, weightKg: null }, "Asia/Kolkata").activity?.calories, 120);
+  assert.ok(prepareActivityChatProposal({ ...facts, durationMinutes: "30" }, profile, "Asia/Kolkata").question);
+});
+test("badminton clarification is a successful reply, retains context and only saves after review", async () => {
+  await request("PATCH", { age: 30, weightKg: 80 }, 0, "/api/account");
+  const count = async () => { const [rows] = await db.execute('SELECT COUNT(*)::int AS count FROM "activityEntry" WHERE "userId"=$1', [users[0].id]); return rows[0].count; };
+  const originalCount = await count();
+  let calls = 0;
+  const options = { settings, fetcher: (async (_url, init) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    assert.ok(body.generationConfig.responseJsonSchema.properties.activityDraft.properties.activity.properties.detail.enum.includes("social"));
+    if (calls === 2) assert.ok(body.contents[0].parts[0].text.includes("30-minute duration"));
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "I've logged your badminton.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "badminton", durationMinutes: 30, detail: calls === 1 ? "moderate" : "social", calorieSource: "estimated", calories: 300, occurredAtLocal: "2026-11-19T10:00" } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+  }) as typeof fetch };
+  const previous = await getFoodChat(users[0].id, options);
+  const clarified = await sendFoodChat(users[0].id, { requestId: randomUUID(), version: previous.version, text: "i played badminton for 30 min", timeZone: "Asia/Kolkata" }, options);
+  assert.equal(clarified.pending, false); assert.equal(clarified.activityDraft, null);
+  assert.match(clarified.messages.at(-1)!.content, /social\/casual or competitive/); assert.equal(clarified.messages.at(-1)!.payload.state, "ready"); assert.equal(await count(), originalCount);
+  const prepared = await sendFoodChat(users[0].id, { requestId: randomUUID(), version: clarified.version, text: "casual", timeZone: "Asia/Kolkata" }, options);
+  assert.equal(prepared.activityDraft!.activity.calories, 189); assert.match(prepared.messages.at(-1)!.content, /ready to review/); assert.doesNotMatch(prepared.messages.at(-1)!.content, /I've logged/); assert.equal(await count(), originalCount);
+  await confirmFoodChatActivity(users[0].id, prepared.activityDraft!.draftId, activityFacts(prepared.activityDraft!.activity), options);
+  assert.equal(await count(), originalCount + 1);
 });

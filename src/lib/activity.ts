@@ -109,3 +109,47 @@ export function parseActivityGoals(value: unknown) {
   const data = value as Record<string, unknown>;
   return { calories: numeric(data.calories, "calorie target", 100000), steps: numeric(data.steps, "step target", 200000, 0), minutes: numeric(data.minutes, "minute target", 1440) } as ActivityGoals;
 }
+
+// The model proposes facts; only the server estimates calories. Missing facts are
+// conversational clarifications, not provider failures. Manual form parsing stays strict.
+export function prepareActivityChatProposal(value: unknown, profile: ActivityProfile, timeZone: string): { activity: ActivityInput; question?: never } | { activity?: never; question: string } {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const candidate = { ...raw, timeZone, ...(raw.calorieSource === "estimated" || (raw.calorieSource === undefined && raw.type !== "others") ? { calories: null } : {}) };
+  let facts: ActivityFacts;
+  try { facts = parseActivityFacts(candidate); }
+  catch (error) {
+    // A model may return prose such as "moderate" for a reference key. Retain
+    // the supplied time/steps and ask the user to choose a supported detail.
+    if (raw.detail != null) {
+      try {
+        const withoutDetail = parseActivityFacts({ ...candidate, detail: null });
+        const question = activityDetailQuestion(withoutDetail);
+        if (question) return { question };
+      } catch { /* Other invalid facts need correction first. */ }
+    }
+    return { question: "Could you check the activity details? " + (error instanceof Error ? error.message : "Tell me the activity and duration in minutes.") };
+  }
+  if (facts.calorieSource === "estimated") {
+    const missing: string[] = [];
+    if (!profile.weightKg) missing.push("your current weight in kg (you can tell me here or add it in Profile)");
+    if (!facts.durationMinutes) missing.push("the activity duration in minutes");
+    if (distanceActivities.includes(facts.type) && !facts.distanceKm) missing.push("the distance in km");
+    if (missing.length) return { question: "To estimate active calories for " + activityLabels[facts.type].toLowerCase() + ", please share " + missing.join(" and ") + "." };
+    const question = !facts.detail ? activityDetailQuestion(facts) : null;
+    if (question) return { question };
+  }
+  try { return { activity: resolveActivity(facts, profile) }; }
+  catch (error) { return { question: error instanceof Error ? error.message : "Please confirm the activity details." }; }
+}
+function activityDetailQuestion(facts: ActivityFacts): string | null {
+  if (facts.calorieSource !== "estimated" || !activityDetails[facts.type]) return null;
+  const duration = facts.durationMinutes ? " I have the " + facts.durationMinutes + "-minute duration." : "";
+  const questions = {
+    badminton: "Was the badminton social/casual or competitive?",
+    football: "Was the football casual or competitive?",
+    strength: "Was the strength training general resistance training or vigorous lifting?",
+    swimming: "Which swimming style did you use: recreational freestyle, vigorous freestyle, backstroke, breaststroke or butterfly?",
+    hiking: "Was the hike slow with no pack, at a normal effort through hills, cross-country, or with a daypack?",
+  };
+  return questions[facts.type as keyof typeof questions] + duration;
+}

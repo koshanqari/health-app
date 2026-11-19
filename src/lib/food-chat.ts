@@ -1,4 +1,4 @@
-import { activityTypes, activityDetails, parseActivityFacts, resolveActivity, type ActivityInput } from "./activity";
+import { activityTypes, activityDetails, parseActivityFacts, prepareActivityChatProposal, type ActivityInput } from "./activity";
 import { ActivityError, saveActivity, getActivityJournal } from "./activity-store";
 import { parseProfileChange, profileChangeFields, type ProfileChangeField } from "./profile";
 import { saveProfileChange, ProfileUpdateError } from "./profile-store";
@@ -95,7 +95,7 @@ const profileDraftSchema = { type: ["object", "null"], properties: {
 const activityProperties = {
   type: { type: "string", enum: activityTypes }, name: { type: "string" },
   durationMinutes: { type: ["number", "null"] }, distanceKm: { type: ["number", "null"] }, steps: { type: ["integer", "null"] },
-  detail: { type: ["string", "null"] }, stepScope: { type: "string", enum: ["session", "daily_total"] }, calorieSource: { type: "string", enum: ["estimated", "manual", "device", "not_estimated"] },
+  detail: { type: ["string", "null"], enum: [...new Set(Object.values(activityDetails).flatMap(options => options.map(option => option.key))), null] }, stepScope: { type: "string", enum: ["session", "daily_total"] }, calorieSource: { type: "string", enum: ["estimated", "manual", "device", "not_estimated"] },
   calories: { type: ["number", "null"] }, notes: { type: "string" }, occurredAtLocal: { type: "string" },
 };
 const activityDraftSchema = { type: ["object", "null"], properties: { activity: { type: "object", properties: activityProperties, required: Object.keys(activityProperties) } }, required: ["activity"] };
@@ -176,7 +176,9 @@ export async function sendFoodChat(userId: string, input: { requestId: string; v
       if (!["reply", "draft", "goals", "summary", "discard", "profile", "activity"].includes(result.intent) || typeof result.reply !== "string" || !result.reply.trim() || result.reply.length > 1600) throw new Error("Invalid chat response");
       if (result.intent === "activity") {
         if (result.draft !== null || result.goalDraft != null || result.profileDraft != null || !result.activityDraft) throw new Error("Invalid activity proposal");
-        return { intent: "activity", reply: result.reply.trim(), draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: resolveActivity({ ...result.activityDraft.activity, timeZone: input.timeZone }, { weightKg: data.userProfile.weightKg ?? null, age: data.userProfile.age ?? null }) } };
+        const proposal = prepareActivityChatProposal(result.activityDraft.activity, { weightKg: data.userProfile.weightKg ?? null, age: data.userProfile.age ?? null }, input.timeZone);
+        if (proposal.question !== undefined) return { intent: "reply", reply: proposal.question, draft: null, goalDraft: null, profileDraft: null, activityDraft: null };
+        return { intent: "activity", reply: "Your activity is ready to review. Check the details and press Save activity to log it.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: proposal.activity } };
       }
       if (result.activityDraft != null) throw new Error("Unexpected activity proposal");
       if (result.intent === "profile") {

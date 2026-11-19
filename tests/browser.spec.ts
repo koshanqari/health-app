@@ -1395,3 +1395,28 @@ test("Kay records daily steps without duration or profile and updates the same t
   await expect(page.locator(".activity-entries")).toContainText("Calories not estimated");
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-daily-steps.png`, fullPage: true });
 });
+
+test("badminton with duration asks for effort without an interrupted reply and then offers a review", async ({ page }) => {
+  await db.execute('INSERT INTO "userProfile" ("userId", age, "weightKg") VALUES ($1,30,70) ON CONFLICT ("userId") DO UPDATE SET age=30, "weightKg"=70', [memberId]);
+  let calls = 0;
+  await page.route("**/api/food/chat*", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    calls++;
+    const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "I've logged this activity.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "badminton", durationMinutes: 30, detail: calls === 1 ? null : "social", calories: 250, calorieSource: "estimated", occurredAtLocal: localDateTime() } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } }) });
+    await route.fulfill({ json: next });
+  });
+  await chatLogin(page);
+  await page.getByLabel("Your message", { exact: true }).fill("i played badminton for 30 min");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByText("Was the badminton social/casual or competitive? I have the 30-minute duration.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Reply interrupted/)).toHaveCount(0);
+  await expect(page.getByText(/couldn’t get a usable reply/)).toHaveCount(0);
+  await page.getByLabel("Your message", { exact: true }).fill("casual");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByText("Your activity is ready to review. Check the details and press Save activity to log it.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review activity", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Review activity", exact: true });
+  await expect(dialog.getByLabel("Duration", { exact: true })).toHaveValue("30");
+  await expect(dialog.getByRole("status")).toContainText("165.38 kcal");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+});
