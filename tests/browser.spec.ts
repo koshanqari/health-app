@@ -1473,7 +1473,7 @@ test("activity date selection stays aligned with chart, totals and entries durin
   await expect(page.locator(".activity-entries")).toContainText("Earlier walk");
 });
 
-test("Home shows a compact apple greeting, activity before food, persistent setup and live totals", async ({ page }, info) => {
+test("Home shows a compact apple greeting, activity before food, swipeable setup cards and live totals", async ({ page }, info) => {
   await db.execute('DELETE FROM "userProfile" WHERE "userId"=$1', [memberId]);
   await db.execute('DELETE FROM "foodGoalVersion" WHERE "userId"=$1', [memberId]);
   await db.execute('DELETE FROM "foodGoal" WHERE "userId"=$1', [memberId]);
@@ -1497,6 +1497,29 @@ test("Home shows a compact apple greeting, activity before food, persistent setu
   const appleBox = (await page.locator(".home-apple").boundingBox())!, greetingBox = (await page.locator(".home-greeting h1").boundingBox())!;
   expect(appleBox.x).toBeGreaterThan(greetingBox.x + greetingBox.width);
   expect((await activity.boundingBox())!.y).toBeLessThan((await food.boundingBox())!.y);
+  await expect(setup).toContainText("3 tasks for you");
+  await expect(setup.getByRole("article")).toHaveCount(1);
+  await setup.getByRole("button", { name: "Next task", exact: true }).click();
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Set daily food goal");
+  await setup.getByRole("button", { name: "Set daily food goal", exact: true }).click();
+  await page.getByRole("dialog", { name: "Daily food goals", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(setup).toContainText("3 tasks for you");
+  const swipe = async (from: number, to: number) => {
+    const card = setup.getByRole("article");
+    await card.evaluate((element, { from, to }) => {
+      const touch = (x: number, y: number) => new Touch({ identifier: 1, target: element, clientX: x, clientY: y });
+      element.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [touch(from, 300)] }));
+      element.dispatchEvent(new TouchEvent("touchend", { bubbles: true, cancelable: true, changedTouches: [touch(to, 305)] }));
+    }, { from, to });
+  };
+  await swipe(250, 100);
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Set daily activity goal");
+  await expect(setup.getByRole("button", { name: "Next task", exact: true })).toBeDisabled();
+  await swipe(100, 250);
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Set daily food goal");
+  await setup.getByRole("button", { name: "Previous task", exact: true }).click();
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Complete your profile");
+  await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-task-cards.png`, fullPage: true });
   await setup.getByRole("button", { name: "Complete your profile", exact: true }).click();
   const profile = page.getByRole("dialog", { name: "Profile", exact: true });
   await profile.getByLabel("Age (years)", { exact: true }).fill("30");
@@ -1506,12 +1529,14 @@ test("Home shows a compact apple greeting, activity before food, persistent setu
   await profile.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(profile.getByRole("status")).toHaveText("Profile saved.");
   await profile.getByRole("button", { name: "Back to app", exact: true }).click();
-  await expect(setup.locator('li[data-complete="true"]')).toHaveCount(1);
+  await expect(setup).toContainText("2 tasks for you");
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Set daily food goal");
   await setup.getByRole("button", { name: "Set daily food goal", exact: true }).click();
   const foodGoals = page.getByRole("dialog", { name: "Daily food goals", exact: true });
   await foodGoals.getByRole("button", { name: "Save goals", exact: true }).click();
   await expect(foodGoals).not.toBeVisible();
-  await expect(setup.locator('li[data-complete="true"]')).toHaveCount(2);
+  await expect(setup).toContainText("1 task for you");
+  await expect(setup.getByRole("article")).toHaveAccessibleName("Set daily activity goal");
   await setup.getByRole("button", { name: "Set daily activity goal", exact: true }).click();
   const activityGoals = page.getByRole("dialog", { name: "Daily activity goals", exact: true });
   await activityGoals.getByLabel("Logged active calories", { exact: true }).fill("400");
@@ -1580,10 +1605,11 @@ test("activity goal AI help keeps the date, prepares separate editable goals and
   const [saved] = await db.execute('SELECT targets FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]); expect(saved).toHaveLength(1); expect(saved[0].targets.minutes).toBe(40);
   await nav.getByRole("link", { name: "Home", exact: true }).click();
   const setup = page.getByRole("region", { name: "Profile setup", exact: true });
-  // The preceding Home scenario clears weight, so the checklist remains with goals marked done.
-  await expect(setup.getByRole("button", { name: "Set daily activity goal", exact: true })).toContainText("Completed");
+  // Completed activity setup leaves the card queue; profile setup can remain.
+  await expect(setup.getByRole("button", { name: "Set daily activity goal", exact: true })).toHaveCount(0);
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-home-setup-goals.png`, fullPage: true });
-  await setup.getByRole("button", { name: "Set daily activity goal", exact: true }).click();
+  await nav.getByRole("link", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: "Set goals", exact: true }).click();
   await form.getByRole("button", { name: "Take help from AI", exact: true }).click();
   await expect(composer).toHaveValue(/daily activity goals/); expect(calls).toBe(1);
 });

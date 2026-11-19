@@ -35,6 +35,8 @@ function SmallSteps() {
 export function HomeDashboard({ active, name, initialProfile, onOpenProfile, onAskFoodAI, onAskActivityAI }: { onAskFoodAI?: (date: string) => void; onAskActivityAI?: (date: string) => void; active: boolean; name: string; initialProfile: HomeProfile; onOpenProfile: () => void }) {
   const fetch = useMemberFetch(), viewingAs = useViewingAs();
   const [date, setDate] = useState("");
+  const [selectedTask, setSelectedTask] = useState("profile");
+  const taskTouch = useRef<{ x: number; y: number } | null>(null);
   const [setupDialog, setSetupDialog] = useState<"food" | "activity" | null>(null);
   useEffect(() => { if (!active) setSetupDialog(null); }, [active]);
   const [data, setData] = useState<HomeData | null>(null), [profile, setProfile] = useState(initialProfile), [error, setError] = useState("");
@@ -66,24 +68,34 @@ export function HomeDashboard({ active, name, initialProfile, onOpenProfile, onA
   const missing = ([ ["age", "age"], ["sex", "sex"], ["heightCm", "height"], ["weightKg", "weight"] ] as const).filter(([key]) => profile[key] === null).map(([, label]) => label);
   const foodReady = !!today?.foodGoals;
   const activityReady = !!today?.activityGoals && Object.values(today.activityGoals).some(value => value !== null);
-  const setupRows = [
+  // Cards leave the queue when their completion condition is met; future introductions can use the same shape.
+  const setupTasks = [
     { key: "profile", label: "Complete your profile", complete: missing.length === 0, loading: false, detail: missing.length ? "Add your " + missing.join(", ") + " to help Kay give better estimates." : "Your details are ready.", action: onOpenProfile },
     { key: "food", label: "Set daily food goal", complete: foodReady, loading: !today, detail: "Calories, protein, carbs and fat.", action: () => setSetupDialog("food") },
     { key: "activity", label: "Set daily activity goal", complete: activityReady, loading: !today, detail: "Active calories, steps or minutes.", action: () => setSetupDialog("activity") },
-  ];
+  ].filter(task => !task.complete && !task.loading);
+  const taskIndex = Math.max(0, setupTasks.findIndex(task => task.key === selectedTask));
+  const task = setupTasks[taskIndex];
+  const changeTask = (offset: number) => { const next = setupTasks[taskIndex + offset]; if (next) setSelectedTask(next.key); };
   const note = date ? dailyNotes[Math.floor(Date.parse(date + "T00:00:00Z") / 86400000) % dailyNotes.length] : "Let’s make a little room for feeling good.";
   const activityGoal = today?.activityGoals?.calories;
   const foodProgress = today?.foodGoals ? foodGoalProgress(today.food.calories, today.foodGoals.calories) : null;
   return <div className="home-dashboard">
     <header className="home-greeting"><div><h1>Hi, {name.trim().split(/\s+/)[0]}.</h1><p className="home-daily-note" aria-label="Today’s thought">{note}</p></div><SmallSteps /></header>
-    {(missing.length > 0 || (today && (!foodReady || !activityReady))) && <section className="home-profile-setup home-setup-checklist" aria-label="Profile setup">
-      <h2>Your setup</h2><ol>{setupRows.map((row, index) => <li key={row.key} data-complete={row.complete}>
-        <button type="button" aria-label={row.label} disabled={row.key !== "profile" && (!!viewingAs || row.loading)} onClick={row.action}>
-          <span className="home-setup-number" aria-hidden="true">{row.complete ? <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 10 4 4 8-8" /></svg> : index + 1}</span>
-          <span className="home-setup-copy"><strong>{row.label}</strong><small>{row.detail}</small></span>
-          <span className="home-setup-state">{row.loading ? "Loading…" : row.complete ? "Completed" : row.key === "profile" && viewingAs ? "View" : "Set up"}</span>
-        </button>
-      </li>)}</ol>
+    {task && <section className="home-task-deck" aria-label="Profile setup" aria-roledescription="carousel">
+      <div className="home-task-heading"><h2>{setupTasks.length} {setupTasks.length === 1 ? "task" : "tasks"} for you</h2>
+        <div className="home-task-controls"><span aria-live="polite">{taskIndex + 1} of {setupTasks.length}</span>
+          <button type="button" aria-label="Previous task" disabled={taskIndex === 0} onClick={() => changeTask(-1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg></button>
+          <button type="button" aria-label="Next task" disabled={taskIndex === setupTasks.length - 1} onClick={() => changeTask(1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 5 5 5-5 5" /></svg></button>
+        </div>
+      </div>
+      <article className="home-task-card" key={task.key} aria-label={task.label} aria-roledescription="slide"
+        onTouchStart={event => { if (event.touches.length === 1) taskTouch.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; else taskTouch.current = null; }}
+        onTouchCancel={() => { taskTouch.current = null; }}
+        onTouchEnd={event => { const start = taskTouch.current; taskTouch.current = null; if (!start || !event.changedTouches.length) return; const dx = event.changedTouches[0].clientX - start.x, dy = event.changedTouches[0].clientY - start.y; if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) * 1.3) { event.preventDefault(); changeTask(dx < 0 ? 1 : -1); } }}>
+        <h3>{task.label}</h3><p>{task.detail}</p>
+        <button className="primary-button" type="button" aria-label={task.label} disabled={task.key !== "profile" && !!viewingAs} onClick={task.action}>{task.key === "profile" && viewingAs ? "View profile" : "Set up"}</button>
+      </article>
     </section>}
     {error && <p className="form-error" role="alert">{error} <button className="text-button" onClick={() => setRevision(value => value + 1)}>Try again</button></p>}
     {setupDialog === "food" && <GoalForm goals={today?.foodGoals ?? null} initialEffectiveFrom={date} onClose={() => setSetupDialog(null)} onAskAI={onAskFoodAI ? effectiveFrom => { setSetupDialog(null); onAskFoodAI(effectiveFrom); } : undefined} onSaved={() => { setSetupDialog(null); window.dispatchEvent(new Event("food-goals-saved")); }} />}
