@@ -41,7 +41,7 @@ test("daily and session step-only logs need no profile or invented energy", () =
   const day = resolveActivity({ type: "walking", stepScope: "daily_total", calorieSource: "not_estimated", steps: 3000 }, { age: null, weightKg: null });
   assert.equal(day.calories, null); assert.equal(day.durationMinutes, null); assert.equal(day.distanceKm, null); assert.equal(day.name, "Daily steps");
   assert.equal(resolveActivity({ type: "walking", calorieSource: "not_estimated", steps: 2000 }, { age: 70, weightKg: null }).calories, null);
-  for (const patch of [{ durationMinutes: 30 }, { distanceKm: 2 }, { calories: 100 }, { calorieSource: "estimated" }, { type: "swimming" }]) assert.throws(() => resolveActivity({ ...activityFacts(day), ...patch }, { age: 30, weightKg: 70 }));
+  for (const patch of [{ durationMinutes: 30 }, { calories: 100 }, { calorieSource: "estimated" }, { type: "swimming" }]) assert.throws(() => resolveActivity({ ...activityFacts(day), ...patch }, { age: 30, weightKg: 70 }));
 });
 test("strict values reject tampered metadata, invalid dates and redundant fields", () => {
   for (const data of [{ ...walk, met: 20 }, { ...walk, pace: 1 }, { ...walk, calories: 5 }, { ...walk, steps: -1 }, { ...walk, steps: 10.5 }, { ...walk, occurredAtLocal: "2026-02-30T10:00" }, { ...walk, occurredAtLocal: "2026-11-10T24:00" }, { ...walk, timeZone: "Invalid" }, { ...walk, type: "badminton" }, { ...walk, durationMinutes: Infinity }, { ...walk, detail: "wrong" }]) assert.throws(() => parseActivityFacts(data));
@@ -109,6 +109,7 @@ test("admin views can read activity but cannot create, edit, delete, set goals o
 });
 
 test("daily step total includes session steps and Kay updates the total instead of adding another", async () => {
+  await request("PATCH", { heightCm: 175 }, 0, "/api/account");
   // End the admin view created above; this is the actual account's own journal.
   const id = randomUUID(), daily = { type: "walking", stepScope: "daily_total", calorieSource: "not_estimated", steps: 3000, occurredAtLocal: "2026-11-09T23:00", timeZone: "Asia/Kolkata" };
   assert.equal((await request("POST", { id, activity: daily })).status, 201);
@@ -160,4 +161,37 @@ test("badminton clarification is a successful reply, retains context and only sa
   assert.equal(prepared.activityDraft!.activity.calories, 189); assert.match(prepared.messages.at(-1)!.content, /ready to review/); assert.doesNotMatch(prepared.messages.at(-1)!.content, /I've logged/); assert.equal(await count(), originalCount);
   await confirmFoodChatActivity(users[0].id, prepared.activityDraft!.draftId, activityFacts(prepared.activityDraft!.activity), options);
   assert.equal(await count(), originalCount + 1);
+});
+
+test("daily walking estimates active calories from steps and saved height without any duration", () => {
+  const facts = { type: "walking", stepScope: "daily_total", calorieSource: "estimated", steps: 10000, occurredAtLocal: "2026-11-19T23:00" };
+  const profile = { age: 30, weightKg: 101, heightCm: 175 };
+  const result = resolveActivity(facts, profile);
+  assert.equal(resolveActivity({ ...facts, steps: 12000 }, { age: 30, weightKg: 70, heightCm: 175 }).calories, 305.03);
+  assert.equal(result.calories, 366.76); assert.equal(result.durationMinutes, null); assert.equal(result.distanceKm, null);
+  assert.ok(Math.abs(result.stepEstimate!.distanceKm - 7.2625) < 1e-9); assert.equal(result.stepEstimate?.distanceSource, "height");
+  assert.match(result.assumptions, /41.5%/); assert.match(result.assumptions, /No duration assumed/);
+  const edited = resolveActivity({ ...facts, steps: 12000 }, { age: 35, weightKg: 70, heightCm: 160 }, result);
+  assert.equal(edited.weightKg, 101); assert.equal(edited.stepEstimate?.heightCm, 175); assert.equal(edited.calories, 440.11);
+  assert.equal(resolveActivity({ ...facts, distanceKm: 6 }, { age: 30, weightKg: 101, heightCm: null }).calories, 303);
+  assert.equal(resolveActivity({ ...facts, steps: 0 }, { age: null, weightKg: 70, heightCm: null }).calories, 0);
+  assert.throws(() => resolveActivity({ ...facts, steps: 0, distanceKm: 6 }, profile), /Clear distance/);
+  const clarification = prepareActivityChatProposal(facts, { age: 30, weightKg: null, heightCm: null }, "Asia/Kolkata");
+  assert.match(clarification.question!, /weight/); assert.match(clarification.question!, /height/); assert.doesNotMatch(clarification.question!, /duration|pace/);
+  const legacyModel = prepareActivityChatProposal({ ...facts, calorieSource: "not_estimated" }, profile, "Asia/Kolkata"); assert.equal(legacyModel.activity?.calories, 366.76);
+  assert.equal(prepareActivityChatProposal({ ...facts, calorieSource: "device", calories: 400 }, { age: null, weightKg: null }, "Asia/Kolkata").activity?.calories, 400);
+});
+test("daily calories persist with snapshots and history counts overlapping step sessions once", async () => {
+  await request("PATCH", { age: 30, weightKg: 101, heightCm: 175 }, 0, "/api/account");
+  const id = randomUUID(), date = "2026-11-08", facts = { type: "walking", stepScope: "daily_total", calorieSource: "estimated", steps: 10000, occurredAtLocal: date + "T23:00" };
+  const created = await request("POST", { id, activity: facts }); assert.equal(created.status, 201); assert.equal((await created.json()).calories, 366.76);
+  const walkId = randomUUID(); await request("POST", { id: walkId, activity: { ...walk, occurredAtLocal: date + "T10:00" } });
+  const sportId = randomUUID(); await request("POST", { id: sportId, activity: { type: "badminton", durationMinutes: 30, detail: "social", occurredAtLocal: date + "T18:00" } });
+  const diary = async () => (await (await request("GET", undefined, 0, "/api/activity?date=" + date)).json());
+  let journal = await diary(); assert.equal(journal.day.steps, 10000); assert.equal(journal.day.calories, 605.37); assert.equal(journal.day.minutes, 90);
+  await request("PATCH", { weightKg: 80, heightCm: 160 }, 0, "/api/account");
+  const edited = await request("PATCH", { id, revision: 1, activity: { ...facts, steps: 12000 } }); assert.equal(edited.status, 200);
+  const saved = await edited.json(); assert.equal(saved.calories, 440.11); assert.equal(saved.stepEstimate.heightCm, 175); assert.equal(saved.weightKg, 101);
+  const history = await (await request("GET", undefined, 0, "/api/activity?date=" + date + "&period=M")).json(); assert.equal(history.days.find((day: any) => day.date === date).calories, 678.72);
+  assert.equal((await request("DELETE", { id, revision: 2 })).status, 200); journal = await diary(); assert.equal(journal.day.calories, 535.55);
 });

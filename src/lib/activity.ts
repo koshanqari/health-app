@@ -6,9 +6,9 @@ export const activityLabels: Record<ActivityType, string> = { walking: "Walking"
 export const activityMetrics = ["calories", "steps", "minutes"] as const;
 export type ActivityMetric = typeof activityMetrics[number];
 export type ActivityGoals = Record<ActivityMetric, number | null>;
-export type ActivityProfile = { weightKg: number | null; age: number | null };
+export type ActivityProfile = { weightKg: number | null; age: number | null; heightCm?: number | null };
 export type ActivityFacts = { type: ActivityType; name: string; durationMinutes: number | null; distanceKm: number | null; steps: number | null; detail: string | null; stepScope: "session" | "daily_total"; calorieSource: "estimated" | "manual" | "device" | "not_estimated"; calories: number | null; notes: string; occurredAtLocal: string; timeZone: string };
-export type ActivityInput = Omit<ActivityFacts, "calories"> & { calories: number | null; weightKg: number | null; ageSnapshot: number | null; met: number | null; referenceCode: string | null; estimateVersion: string | null; assumptions: string };
+export type ActivityInput = Omit<ActivityFacts, "calories"> & { calories: number | null; weightKg: number | null; ageSnapshot: number | null; met: number | null; referenceCode: string | null; estimateVersion: string | null; assumptions: string; stepEstimate?: { heightCm: number | null; stepLengthM: number | null; distanceKm: number; distanceSource: "height" | "provided"; kcalPerKgKm: number } };
 export type ActivityEntry = ActivityInput & { id: string; revision: number; chatMessageId: string | null };
 export type ActivityDay = Record<ActivityMetric, number> & { date: string; entries: number };
 export type ActivityGoalVersion = { effectiveFrom: string; goals: ActivityGoals };
@@ -26,7 +26,7 @@ export const activityDetails: Partial<Record<ActivityType, { key: string; label:
   football: [{ key: "casual", label: "Casual play", met: 7, code: "15610" }, { key: "competitive", label: "Competitive play", met: 9.5, code: "15605" }],
   hiking: [{ key: "easy", label: "Slow, no pack", met: 3.8, code: "17081" }, { key: "hills", label: "Fields and hills, normal effort", met: 5.3, code: "17082" }, { key: "cross_country", label: "Cross-country terrain", met: 6, code: "17080" }, { key: "daypack", label: "Hiking with a daypack", met: 7.8, code: "17012" }],
 };
-const round = (n: number) => Math.round(n * 100) / 100;
+const round = (n: number) => Math.round((n + Number.EPSILON * Math.max(1, Math.abs(n))) * 100) / 100;
 function numeric(value: unknown, label: string, max: number, decimals = 2, zero = false): number | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value !== "number" || !Number.isFinite(value) || value < (zero ? 0 : .001) || value > max || Math.abs(value * 10 ** decimals - Math.round(value * 10 ** decimals)) > .000001) throw new Error(`Check ${label}; use a number ${zero ? "from 0" : "above 0"} up to ${max}.`);
@@ -51,13 +51,13 @@ export function parseActivityFacts(value: unknown, now = new Date()): ActivityFa
   if (detail !== null && !activityDetails[type]?.some(option => option.key === detail)) throw new Error("Choose a valid activity detail.");
   const stepScope = data.stepScope ?? "session";
   if (!["session", "daily_total"].includes(String(stepScope)) || (stepScope === "daily_total" && type !== "walking")) throw new Error("Daily step totals use Walking.");
-  if (stepScope === "daily_total" && (steps === null || durationMinutes !== null || distanceKm !== null)) throw new Error("A daily step total needs steps only, without a session duration or distance.");
+  if (stepScope === "daily_total" && (steps === null || durationMinutes !== null)) throw new Error("Enter daily steps without a session duration; distance is optional.");
+  if (stepScope === "daily_total" && steps === 0 && distanceKm !== null) throw new Error("Clear distance when the daily step count is zero.");
   const calorieSource = data.calorieSource ?? (type === "others" ? "manual" : "estimated");
   if (!["estimated", "manual", "device", "not_estimated"].includes(String(calorieSource))) throw new Error("Choose how to log active calories.");
   const calories = numeric(data.calories, "active calories", 50000, 2, true);
   if (["manual", "device"].includes(String(calorieSource)) && calories === null) throw new Error("Enter the active calories burned.");
   if (calorieSource === "not_estimated" && (steps === null || !stepActivities.includes(type) || calories !== null)) throw new Error("Steps-only logging needs a step count and leaves calories unestimated.");
-  if (stepScope === "daily_total" && calorieSource !== "not_estimated") throw new Error("Daily step totals leave calories unestimated. Log a workout separately for active calories.");
   if (calorieSource === "estimated" && calories !== null) throw new Error("Choose entered or device calories when supplying a calorie value.");
   const timeZone = data.timeZone ?? "UTC";
   if (typeof timeZone !== "string" || timeZone.length > 64) throw new Error("Choose a valid time zone.");
@@ -80,9 +80,23 @@ export function resolveActivity(value: unknown, profile: ActivityProfile, previo
   if (facts.calorieSource === "not_estimated") return { ...facts, calories: null, weightKg: null, ageSnapshot: null, met: null, referenceCode: null, estimateVersion: null, assumptions: facts.stepScope === "daily_total" ? "Daily step total; includes steps from any walks already logged. Calories not estimated." : "Steps recorded; calories not estimated." };
   if (facts.calorieSource !== "estimated") return { ...facts, calories: facts.calories!, weightKg: null, ageSnapshot: null, met: null, referenceCode: null, estimateVersion: null, assumptions: "Active calories supplied by " + (facts.calorieSource === "device" ? "your device." : "you.") };
   if (facts.type === "others") throw new Error("Enter active calories for Others.");
-  const snapshot = previous?.calorieSource === "estimated" ? { weightKg: previous.weightKg, age: previous.ageSnapshot } : profile;
+  const snapshot = previous?.calorieSource === "estimated" ? { weightKg: previous.weightKg, age: previous.ageSnapshot, heightCm: previous.stepEstimate?.heightCm ?? profile.heightCm } : profile;
   if (!snapshot.weightKg || snapshot.weightKg <= 0 || snapshot.weightKg > 500) throw new Error("Add your weight in Profile to estimate active calories, or enter calories yourself.");
   if (snapshot.age !== null && (snapshot.age < 19 || snapshot.age > 59)) throw new Error("These estimates use adult reference values for ages 19–59. Enter your active calories instead.");
+  if (facts.stepScope === "daily_total") {
+    // Level-walking distance cost: net ACSM horizontal VO2 (0.1 ml/kg/m)
+    // times 5 kcal/litre -> 0.5 kcal/kg/km. All-day steps lack pace/grade:
+    // assume ordinary level walking, not a measured all-day expenditure.
+    // Height * 0.415 is an explicitly labelled step-length assumption, not
+    // a measured/personalised stride. A supplied distance takes precedence.
+    const heightCm = snapshot.heightCm ?? null;
+    if (!facts.distanceKm && facts.steps! > 0 && !heightCm) throw new Error("Add your height in Profile, or enter the daily walking distance, to estimate calories from steps.");
+    const stepLengthM = facts.distanceKm ? null : heightCm ? heightCm / 100 * .415 : null;
+    const distanceKm = facts.distanceKm ?? facts.steps! * (stepLengthM ?? 0) / 1000;
+    if (!Number.isFinite(distanceKm) || distanceKm > 1000 || (heightCm !== null && (heightCm <= 0 || heightCm > 300))) throw new Error("Check height, steps and distance.");
+    const assumptions = facts.distanceKm ? "Using your supplied walking distance." : `Assumed step length ${round((stepLengthM ?? 0) * 100)} cm (41.5% of saved height); approximate distance ${round(distanceKm)} km.`;
+    return { ...facts, calories: round(.5 * snapshot.weightKg * distanceKm), weightKg: snapshot.weightKg, ageSnapshot: snapshot.age, met: null, referenceCode: "ACSM-level-net-distance", estimateVersion: "daily-walking-distance-v1", stepEstimate: { heightCm: facts.distanceKm ? null : heightCm, stepLengthM, distanceKm, distanceSource: facts.distanceKm ? "provided" : "height", kcalPerKgKm: .5 }, assumptions: assumptions + " Rough active-calorie estimate for level walking spread throughout the day; pace, hills and stop-start movement are unknown. No duration assumed." };
+  }
   if (!facts.durationMinutes) throw new Error("Enter the activity duration to estimate active calories.");
   let met: number, referenceCode: string, assumptions: string;
   if (distanceActivities.includes(facts.type)) {
@@ -114,7 +128,8 @@ export function parseActivityGoals(value: unknown) {
 // conversational clarifications, not provider failures. Manual form parsing stays strict.
 export function prepareActivityChatProposal(value: unknown, profile: ActivityProfile, timeZone: string): { activity: ActivityInput; question?: never } | { activity?: never; question: string } {
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const candidate = { ...raw, timeZone, ...(raw.calorieSource === "estimated" || (raw.calorieSource === undefined && raw.type !== "others") ? { calories: null } : {}) };
+  const daily = raw.type === "walking" && raw.stepScope === "daily_total";
+  const candidate = { ...raw, ...(daily && (raw.calorieSource === "not_estimated" || raw.calorieSource === undefined) ? { calorieSource: "estimated" } : {}), timeZone, ...((daily && raw.calorieSource === "not_estimated") || raw.calorieSource === "estimated" || (raw.calorieSource === undefined && raw.type !== "others") ? { calories: null } : {}) };
   let facts: ActivityFacts;
   try { facts = parseActivityFacts(candidate); }
   catch (error) {
@@ -132,8 +147,9 @@ export function prepareActivityChatProposal(value: unknown, profile: ActivityPro
   if (facts.calorieSource === "estimated") {
     const missing: string[] = [];
     if (!profile.weightKg) missing.push("your current weight in kg (you can tell me here or add it in Profile)");
-    if (!facts.durationMinutes) missing.push("the activity duration in minutes");
-    if (distanceActivities.includes(facts.type) && !facts.distanceKm) missing.push("the distance in km");
+    if (facts.stepScope !== "daily_total" && !facts.durationMinutes) missing.push("the activity duration in minutes");
+    if (facts.stepScope === "daily_total" && !facts.distanceKm && facts.steps! > 0 && !profile.heightCm) missing.push("your height in cm (or the daily walking distance in km)");
+    if (facts.stepScope !== "daily_total" && distanceActivities.includes(facts.type) && !facts.distanceKm) missing.push("the distance in km");
     if (missing.length) return { question: "To estimate active calories for " + activityLabels[facts.type].toLowerCase() + ", please share " + missing.join(" and ") + "." };
     const question = !facts.detail ? activityDetailQuestion(facts) : null;
     if (question) return { question };

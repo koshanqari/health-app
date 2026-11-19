@@ -1278,7 +1278,7 @@ test("activity logger supports all types, independent fields, goals and history 
   await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
   await db.execute('DELETE FROM "activityGoalVersion" WHERE "userId"=$1', [memberId]);
   await chatLogin(page);
-  const profileResponse = await page.request.patch("/api/account", { headers: { Origin: baseURL }, data: { age: 30, weightKg: 70 } }); expect(profileResponse.status()).toBe(200);
+  const profileResponse = await page.request.patch("/api/account", { headers: { Origin: baseURL }, data: { age: 30, weightKg: 70, heightCm: 175 } }); expect(profileResponse.status()).toBe(200);
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav.getByRole("link", { name: "Activity", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
@@ -1297,9 +1297,9 @@ test("activity logger supports all types, independent fields, goals and history 
   await dialog.getByLabel("Activity", { exact: true }).selectOption("walking");
   await dialog.getByLabel("Logging", { exact: true }).selectOption("daily_total");
   await expect(dialog.getByLabel("Duration", { exact: true })).toHaveCount(0);
-  await expect(dialog.getByLabel("Distance", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Distance", { exact: true })).toBeVisible();
   await dialog.getByLabel("Steps", { exact: true }).fill("3000");
-  await expect(dialog.getByRole("status")).toContainText("Calories not estimated");
+  await expect(dialog.getByRole("status")).toContainText("76.26 kcal");
   await dialog.getByLabel("Logging", { exact: true }).selectOption("session");
   await dialog.getByLabel("Duration", { exact: true }).fill("60");
   await dialog.getByLabel("Distance", { exact: true }).fill("5");
@@ -1364,35 +1364,36 @@ test("Kay activity proposal is editable and saves only on final confirmation", a
   await expect(page.locator(".activity-entries")).toContainText("Evening badminton");
 });
 
-test("Kay records daily steps without duration or profile and updates the same total", async ({ page }, info) => {
+test("Kay estimates daily walking calories without duration and updates the same total", async ({ page }, info) => {
   await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
-  await db.execute('DELETE FROM "userProfile" WHERE "userId"=$1', [memberId]);
+  await db.execute('INSERT INTO "userProfile" ("userId", age, "weightKg", "heightCm") VALUES ($1,30,70,175) ON CONFLICT ("userId") DO UPDATE SET age=30, "weightKg"=70, "heightCm"=175', [memberId]);
   let calls = 0;
   await page.route("**/api/food/chat*", async route => {
     if (route.request().method() !== "POST") return route.fallback();
     calls++;
     const next = await sendFoodChat(memberId, await mockedChatInput(route), { settings: chatSettings, fetcher: async (_url, init) => {
       const body = JSON.parse(String(init?.body)); expect(body.systemInstruction.parts[0].text).toContain('a daily step total');
-      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "Review your daily step total. Calories are not estimated.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "walking", name: "Daily steps", stepScope: "daily_total", steps: calls === 1 ? 3000 : 3500, calorieSource: "not_estimated", calories: null, durationMinutes: null, distanceKm: null, detail: null, notes: "", occurredAtLocal: localDateTime() } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ intent: "activity", reply: "Review your daily step total.", draft: null, goalDraft: null, profileDraft: null, activityDraft: { activity: { type: "walking", name: "Daily steps", stepScope: "daily_total", steps: calls === 1 ? 10000 : 12000, calorieSource: "estimated", calories: null, durationMinutes: null, distanceKm: null, detail: null, notes: "", occurredAtLocal: localDateTime() } } }) }] } }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 200 } });
     } });
     await route.fulfill({ json: next });
   });
   await chatLogin(page);
-  for (const message of ["I walked 3000 steps today", "Actually 3500, total throughout the day"]) {
+  for (const message of ["I walked 10K steps today throughout the day", "Actually 12K, total throughout the day"]) {
     await page.getByLabel("Your message", { exact: true }).fill(message);
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await page.getByRole("button", { name: "Review activity", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Review activity", exact: true });
     await expect(dialog.getByLabel("Duration", { exact: true })).toHaveCount(0);
-    await expect(dialog.getByLabel("Distance", { exact: true })).toHaveCount(0);
-    await expect(dialog.getByRole("status")).toContainText("Calories not estimated");
+    await expect(dialog.getByLabel("Distance", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("status")).toContainText(calls === 1 ? "254.19 kcal" : "305.03 kcal");
+    await expect(dialog.getByRole("status")).toContainText("41.5%");
     await dialog.getByRole("button", { name: "Save activity", exact: true }).click();
     await expect(dialog).not.toBeVisible();
   }
-  const [rows] = await db.execute('SELECT data FROM "activityEntry" WHERE "userId"=$1', [memberId]); expect(rows).toHaveLength(1); expect(rows[0].data.steps).toBe(3500); expect(rows[0].data.calories).toBe(null);
+  const [rows] = await db.execute('SELECT data FROM "activityEntry" WHERE "userId"=$1', [memberId]); expect(rows).toHaveLength(1); expect(rows[0].data.steps).toBe(12000); expect(rows[0].data.calories).toBe(305.03);
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Activity", exact: true }).click();
-  await expect(page.locator(".activity-summary")).toContainText("3,500");
-  await expect(page.locator(".activity-entries")).toContainText("Calories not estimated");
+  await expect(page.locator(".activity-summary")).toContainText("12,000");
+  await expect(page.locator(".activity-entries")).toContainText("305.03 kcal");
   await page.screenshot({ path: `/private/tmp/daywell-${info.project.name}-daily-steps.png`, fullPage: true });
 });
 

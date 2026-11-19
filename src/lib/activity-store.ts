@@ -48,7 +48,7 @@ export async function saveActivity(connection: DatabaseConnection, userId: strin
   if (revision !== undefined && !existing) throw new ActivityError(404, "That activity wasn’t found.");
   if (existing && Number(existing.revision) !== revision) throw new ActivityError(409, "This activity changed. Reopen it before editing.");
   const profile = await readProfile(connection, userId);
-  const activity = resolveActivity(facts, { weightKg: profile?.weightKg ?? null, age: profile?.age ?? null }, existing?.data ?? reviewed);
+  const activity = resolveActivity(facts, { weightKg: profile?.weightKg ?? null, age: profile?.age ?? null, heightCm: profile?.heightCm ?? null }, existing?.data ?? reviewed);
   if (existing) await connection.execute(`UPDATE "activityEntry" SET data=$1, "occurredAtLocal"=$2, fingerprint=$3, revision=revision+1, "updatedAt"=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id=$4 AND "userId"=$5`, [JSON.stringify(activity), activity.occurredAtLocal, fingerprint, id, userId]);
   else await connection.execute('INSERT INTO "activityEntry" (id, "userId", data, "occurredAtLocal", fingerprint, "chatMessageId") VALUES ($1,$2,$3,$4,$5,$6)', [id, userId, JSON.stringify(activity), activity.occurredAtLocal, fingerprint, chatMessageId ?? null]);
   return { ...activity, id, revision: existing ? Number(existing.revision) + 1 : 1, chatMessageId: existing?.chatMessageId ?? chatMessageId ?? null } as ActivityEntry;
@@ -60,7 +60,7 @@ export async function deleteActivity(connection: DatabaseConnection, userId: str
   await connection.execute('DELETE FROM "activityEntry" WHERE id=$1 AND "userId"=$2', [id, userId]);
 }
 async function dailyTotals(userId: string, start: string, end: string): Promise<ActivityDay[]> {
-  const [rows] = await db.execute<DatabaseRow[]>(`SELECT to_char("occurredAtLocal", 'YYYY-MM-DD') AS date, COUNT(*)::int AS entries, SUM(calories) AS calories, SUM(minutes) AS minutes, GREATEST(COALESCE(SUM(steps) FILTER (WHERE COALESCE(data->>'stepScope','session')='session'),0), COALESCE(MAX(steps) FILTER (WHERE data->>'stepScope'='daily_total'),0)) AS steps FROM "activityEntry" WHERE "userId"=$1 AND "occurredAtLocal">=$2 AND "occurredAtLocal"<$3 GROUP BY 1`, [userId, start, nextFoodDate(end)]);
+  const [rows] = await db.execute<DatabaseRow[]>(`SELECT to_char("occurredAtLocal", 'YYYY-MM-DD') AS date, COUNT(*)::int AS entries, COALESCE(SUM(calories) FILTER (WHERE COALESCE(data->>'stepScope','session')='session' AND data->>'type' NOT IN ('walking','running','hiking')),0) + GREATEST(COALESCE(SUM(calories) FILTER (WHERE COALESCE(data->>'stepScope','session')='session' AND data->>'type' IN ('walking','running','hiking')),0), COALESCE(MAX(calories) FILTER (WHERE data->>'stepScope'='daily_total'),0)) AS calories, SUM(minutes) AS minutes, GREATEST(COALESCE(SUM(steps) FILTER (WHERE COALESCE(data->>'stepScope','session')='session'),0), COALESCE(MAX(steps) FILTER (WHERE data->>'stepScope'='daily_total'),0)) AS steps FROM "activityEntry" WHERE "userId"=$1 AND "occurredAtLocal">=$2 AND "occurredAtLocal"<$3 GROUP BY 1`, [userId, start, nextFoodDate(end)]);
   return rows.map(row => ({ date: row.date, entries: Number(row.entries), calories: Number(row.calories || 0), steps: Number(row.steps || 0), minutes: Number(row.minutes || 0) }));
 }
 export async function getActivityJournal(userId: string, date: string): Promise<ActivityJournalData> {
@@ -70,7 +70,7 @@ export async function getActivityJournal(userId: string, date: string): Promise<
     db.execute<DatabaseRow[]>(`SELECT targets, to_char("effectiveFrom", 'YYYY-MM-DD') AS date FROM "activityGoalVersion" WHERE "userId"=$1 AND "effectiveFrom"<=$2 ORDER BY "effectiveFrom" DESC LIMIT 1`, [userId, date]),
     readProfile(db, userId),
   ]);
-  return { entries: rows.map(entry), day: days[0] ?? { date, entries: 0, calories: 0, steps: 0, minutes: 0 }, goals: versions[0]?.targets ?? null, goalEffectiveFrom: versions[0]?.date ?? null, profile: { weightKg: profile?.weightKg ?? null, age: profile?.age ?? null } };
+  return { entries: rows.map(entry), day: days[0] ?? { date, entries: 0, calories: 0, steps: 0, minutes: 0 }, goals: versions[0]?.targets ?? null, goalEffectiveFrom: versions[0]?.date ?? null, profile: { weightKg: profile?.weightKg ?? null, age: profile?.age ?? null, heightCm: profile?.heightCm ?? null } };
 }
 export async function getActivityHistory(userId: string, period: HistoryPeriod, date: string): Promise<ActivityHistoryData> {
   const { start, end } = foodHistoryWindow(period, date);
