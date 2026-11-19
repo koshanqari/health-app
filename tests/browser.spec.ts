@@ -1284,6 +1284,9 @@ test("activity logger supports all types, independent fields, goals and history 
   await nav.getByRole("link", { name: "Activity", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activity history", exact: true })).toBeVisible();
+  const summary = page.locator(".activity-summary");
+  await expect(summary.getByRole("heading", { name: "Today’s activity", exact: true })).toBeVisible();
+  await expect(summary.locator('[data-goal-status="unset"]')).toHaveCount(3);
   await page.getByRole("button", { name: "Log activity", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Log activity", exact: true });
   for (const type of ["walking", "running", "cycling", "swimming", "strength", "badminton", "cricket", "football", "hiking", "others"]) {
@@ -1318,9 +1321,18 @@ test("activity logger supports all types, independent fields, goals and history 
   await goals.getByLabel("Active minutes", { exact: true }).fill("30");
   await goals.getByRole("button", { name: "Save goals", exact: true }).click();
   await expect(goals).not.toBeVisible();
-  await expect(page.locator(".activity-summary small").filter({ hasText: "Goal achieved" })).toHaveCount(3);
+  await expect(page.locator('.activity-summary [data-goal-status="achieved"]')).toHaveCount(3);
+  await expect(summary.locator(".home-total strong")).toHaveText("205.8");
+  await expect(summary.getByRole("progressbar", { name: "Steps goal progress", exact: true })).toHaveAttribute("value", "5000");
+  await expect(summary.getByRole("progressbar", { name: "Active minutes goal progress", exact: true })).toHaveAttribute("max", "30");
   const history = page.getByRole("region", { name: "Activity goal history", exact: true });
   const today = await page.getByLabel("Activity date", { exact: true }).inputValue();
+  await page.getByRole("button", { name: "Previous day", exact: true }).click();
+  await expect(summary.getByRole("heading")).toContainText("Activity");
+  await expect(summary.getByRole("heading")).not.toHaveText("Today’s activity");
+  await expect(summary.locator('[data-goal-status="unset"]')).toHaveCount(3);
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(summary.locator('[data-goal-status="achieved"]')).toHaveCount(3);
   await expect(history.locator(`[data-date="${today}"]`)).toHaveAttribute("data-status", "achieved");
   const chart = history.getByRole("group", { name: /Daily activity chart/ });
   await chart.focus(); await chart.press("End");

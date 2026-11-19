@@ -81,7 +81,12 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI, onAskAIGoals }
   return <section className="activity-journal"><div className="activity-title"><div><p className="eyebrow">A little movement, every day</p><h1>Activity</h1></div><button className="primary-button" disabled={!!viewingAs} onClick={() => setForm("new")}>Log activity</button></div>
     <div className="activity-date"><button className="date-arrow" aria-label="Previous day" disabled={date <= "2000-01-01"} onClick={() => setDate(nextFoodDate(date, -1))}><ChevronIcon direction="left" /></button><input type="date" aria-label="Activity date" value={date} min="2000-01-01" max="2100-12-31" onChange={event => { if (event.target.value) setDate(event.target.value); }} /><button className="date-arrow" aria-label="Next day" disabled={date >= "2100-12-31"} onClick={() => setDate(nextFoodDate(date))}><ChevronIcon direction="right" /></button><button className="text-button" onClick={() => setDate(localDateTime().slice(0, 10))}>Today</button></div>
     {error && <p className="form-error" role="alert">{error} <button className="text-button" onClick={refresh}>Try again</button></p>}
-    {visibleData ? <><div className="activity-title"><h2>Your movement</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setGoalsOpen(true)}>Set goals</button></div><div className="activity-summary">{activityMetrics.map(metric => { const target = visibleData.goals?.[metric]; return <div key={metric}><span>{metricLabels[metric]}</span><strong>{format(visibleData.day[metric])}{metric === "calories" && <small> kcal</small>}</strong>{target ? <><progress aria-label={metricLabels[metric] + " goal progress"} value={Math.min(visibleData.day[metric], target)} max={target} /><small>{visibleData.day[metric] >= target ? "Goal achieved" : `${format(target - visibleData.day[metric])} remaining`} · Goal {format(target)}</small></> : <small>No goal set</small>}</div>; })}</div>
+    {visibleData ? <><section className="activity-summary home-today home-today-activity" aria-labelledby="activity-summary-title">
+      <div className="home-section-heading"><h2 id="activity-summary-title">{date === localDateTime().slice(0, 10) ? "Today’s activity" : new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00:00")) + " · Activity"}</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setGoalsOpen(true)}>Set goals</button></div>
+      <p className="home-total"><strong>{format(visibleData.day.calories)}</strong><span>kcal active</span></p>
+      <ActivityGoalProgress value={visibleData.day.calories} target={visibleData.goals?.calories} metric="calories" />
+      <dl className="home-metrics home-activity-metrics">{(["steps", "minutes"] as const).map(metric => <div key={metric}><dt>{metricLabels[metric]}</dt><dd>{format(visibleData.day[metric])}</dd><ActivityGoalProgress value={visibleData.day[metric]} target={visibleData.goals?.[metric]} metric={metric} /></div>)}</dl>
+    </section>
     <p className="history-footnote">Daily steps include your logged walks. Walking calories are counted once.</p>
     </> : !error && <p role="status">Loading activity…</p>}
     <FoodHistory active={active} date={date} revision={revision} onSelectDate={setDate} area="activity" />
@@ -92,6 +97,10 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI, onAskAIGoals }
     {form && <ActivityForm entry={form === "new" ? null : form} profile={data?.profile ?? { weightKg: null, age: null }} date={date} onClose={() => setForm(null)} onOpenProfile={onOpenProfile} onSaved={value => { setForm(null); setDate(value); refresh(); }} />}
     {goalsOpen && <ActivityGoalForm goals={visibleData?.goals ?? null} date={date} onAskAI={onAskAIGoals ? effectiveFrom => { setGoalsOpen(false); onAskAIGoals(effectiveFrom); } : undefined} onClose={() => setGoalsOpen(false)} onSaved={() => { setGoalsOpen(false); refresh(); }} />}
   </section>;
+}
+function ActivityGoalProgress({ value, target, metric }: { value: number; target: number | null | undefined; metric: "calories" | "steps" | "minutes" }) {
+  const unit = metric === "calories" ? "kcal" : metric === "minutes" ? "min" : "steps";
+  return <><p className="home-goal-note" data-goal-status={target ? value >= target ? "achieved" : "remaining" : "unset"}>{target ? `${value >= target ? "Goal achieved" : format(target - value) + " " + unit + " remaining"} · ${format(target)} ${unit} goal` : "No goal set"}</p>{target ? <progress aria-label={metricLabels[metric] + " goal progress"} value={Math.min(value, target)} max={target} /> : null}</>;
 }
 export function ActivityGoalForm({ goals, date, onClose, onSaved, onAskAI, saveGoals }: {
   goals: ActivityGoals | null; date: string; onClose: () => void; onSaved: (date: string) => void;
