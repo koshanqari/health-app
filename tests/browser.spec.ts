@@ -1421,3 +1421,53 @@ test("badminton with duration asks for effort without an interrupted reply and t
   await expect(dialog.getByRole("status")).toContainText("165.38 kcal");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 });
+
+test("activity date selection stays aligned with chart, totals and entries during slow day loads", async ({ page }) => {
+  const firstDate = "2026-11-17", emptyDate = "2026-11-18", loggedDate = "2026-11-19";
+  await db.execute('DELETE FROM "activityEntry" WHERE "userId"=$1', [memberId]);
+  await chatLogin(page);
+  for (const [date, calories, name] of [[firstDate, 120, "Earlier walk"], [loggedDate, 890.82, "Thursday activity"]] as const) {
+    const response = await page.request.post("/api/activity", { headers: { Origin: baseURL }, data: { id: randomUUID(), activity: { type: "others", name, calorieSource: "manual", calories, occurredAtLocal: date + "T12:00" } } }); expect(response.status()).toBe(201);
+  }
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Activity", exact: true }).click();
+  const history = page.getByRole("region", { name: "Activity goal history", exact: true });
+  await page.getByLabel("Activity date", { exact: true }).fill(loggedDate);
+  await expect(page.locator(".activity-entries")).toContainText("Thursday activity");
+  await history.getByRole("button", { name: "M", exact: true }).click();
+  await history.getByRole("button", { name: "Steps", exact: true }).click();
+  await expect(history.locator(`[data-date="${loggedDate}"]`)).toBeAttached();
+  // Hold an uncached diary request while the chart's monthly data is already cached.
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; }), ready = new Promise<void>(resolve => { started = resolve; });
+  await page.route("**/api/activity?*", async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("date") !== emptyDate || url.searchParams.has("period")) return route.fallback();
+    started(); await held; await route.continue();
+  });
+  try {
+    await page.getByLabel("Activity date", { exact: true }).fill(emptyDate);
+    await ready;
+    await expect(page.locator(".activity-summary")).toHaveCount(0);
+    await expect(page.locator(".activity-entries article")).toHaveCount(0);
+    await expect(history.getByRole("button", { name: "M", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(history.getByRole("button", { name: "Steps", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(history.locator(".history-caption")).toHaveText("Total");
+    await expect(history.locator(".history-detail")).toContainText("18 Nov 2026");
+  } finally { release(); }
+  await expect(page.locator(".activity-summary")).toContainText("0");
+  await expect(page.locator(".activity-entries article")).toHaveCount(0);
+  await history.getByRole("button", { name: "Calories", exact: true }).click();
+  await expect(history.locator(".history-value")).toContainText("0");
+  const chart = history.getByRole("group", { name: /Daily activity chart/ });
+  await chart.focus(); await chart.press("ArrowRight");
+  await expect(page.getByLabel("Activity date", { exact: true })).toHaveValue(loggedDate);
+  await expect(history.locator(".history-detail")).toContainText("19 Nov 2026");
+  await expect(history.locator(".history-value")).toContainText("890.82");
+  await expect(page.locator(".activity-summary")).toContainText("890.82");
+  await expect(page.locator(".activity-entries")).toContainText("Thursday activity");
+  await page.getByLabel("Activity date", { exact: true }).fill(firstDate);
+  await expect(history.getByRole("button", { name: "M", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(history.locator(".history-detail")).toContainText("17 Nov 2026");
+  await expect(history.locator(".history-value")).toContainText("120");
+  await expect(page.locator(".activity-entries")).toContainText("Earlier walk");
+});
