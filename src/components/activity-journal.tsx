@@ -66,7 +66,7 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI }: { active: bo
   const [revision, setRevision] = useState(0), [form, setForm] = useState<ActivityEntry | "new" | null>(null), [goalsOpen, setGoalsOpen] = useState(false), [deleting, setDeleting] = useState<string | null>(null);
   const cache = useRef(new Map<string, { value: ActivityJournalData; at: number }>());
   const visibleData = data?.day.date === date ? data : null;
-  function refresh() { cache.current.clear(); setRevision(value => value + 1); }
+  function refresh() { window.dispatchEvent(new Event("daywell-summary-changed")); cache.current.clear(); setRevision(value => value + 1); }
   useEffect(() => { window.addEventListener("activity-saved", refresh); window.addEventListener("profile-saved", refresh); return () => { window.removeEventListener("activity-saved", refresh); window.removeEventListener("profile-saved", refresh); }; }, []);
   useEffect(() => {
     if (!active) return;

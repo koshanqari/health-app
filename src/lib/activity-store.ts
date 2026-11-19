@@ -59,7 +59,7 @@ export async function deleteActivity(connection: DatabaseConnection, userId: str
   if (Number(rows[0].revision) !== revision) throw new ActivityError(409, "This activity changed. Reopen it before deleting.");
   await connection.execute('DELETE FROM "activityEntry" WHERE id=$1 AND "userId"=$2', [id, userId]);
 }
-async function dailyTotals(userId: string, start: string, end: string): Promise<ActivityDay[]> {
+export async function dailyTotals(userId: string, start: string, end: string): Promise<ActivityDay[]> {
   const [rows] = await db.execute<DatabaseRow[]>(`SELECT to_char("occurredAtLocal", 'YYYY-MM-DD') AS date, COUNT(*)::int AS entries, COALESCE(SUM(calories) FILTER (WHERE COALESCE(data->>'stepScope','session')='session' AND data->>'type' NOT IN ('walking','running','hiking')),0) + GREATEST(COALESCE(SUM(calories) FILTER (WHERE COALESCE(data->>'stepScope','session')='session' AND data->>'type' IN ('walking','running','hiking')),0), COALESCE(MAX(calories) FILTER (WHERE data->>'stepScope'='daily_total'),0)) AS calories, SUM(minutes) AS minutes, GREATEST(COALESCE(SUM(steps) FILTER (WHERE COALESCE(data->>'stepScope','session')='session'),0), COALESCE(MAX(steps) FILTER (WHERE data->>'stepScope'='daily_total'),0)) AS steps FROM "activityEntry" WHERE "userId"=$1 AND "occurredAtLocal">=$2 AND "occurredAtLocal"<$3 GROUP BY 1`, [userId, start, nextFoodDate(end)]);
   return rows.map(row => ({ date: row.date, entries: Number(row.entries), calories: Number(row.calories || 0), steps: Number(row.steps || 0), minutes: Number(row.minutes || 0) }));
 }

@@ -180,6 +180,7 @@ export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAs
   }
 
   function invalidateJournal() {
+    window.dispatchEvent(new Event("daywell-summary-changed"));
     for (const cached of journalCache.current.values()) cached.at = 0;
   }
 

@@ -195,3 +195,27 @@ test("daily calories persist with snapshots and history counts overlapping step 
   const history = await (await request("GET", undefined, 0, "/api/activity?date=" + date + "&period=M")).json(); assert.equal(history.days.find((day: any) => day.date === date).calories, 678.72);
   assert.equal((await request("DELETE", { id, revision: 2 })).status, 200); journal = await diary(); assert.equal(journal.day.calories, 535.55);
 });
+
+test("Home totals are private, date-specific and use the same activity overlap calculation", async () => {
+  const date = "2026-11-07";
+  assert.equal((await fetch(base + "/api/home?date=" + date)).status, 401);
+  assert.equal((await request("GET", undefined, 0, "/api/home?date=2026-02-30")).status, 400);
+  await request("PATCH", { age: 30, weightKg: 70, heightCm: 175, sex: "prefer_not_to_say" }, 0, "/api/account");
+  await request("POST", { id: randomUUID(), activity: { type: "walking", stepScope: "daily_total", steps: 10000, calorieSource: "estimated", occurredAtLocal: date + "T23:00" } });
+  await request("POST", { id: randomUUID(), activity: { ...walk, occurredAtLocal: date + "T10:00" } });
+  await request("POST", { name: "Home meal", calories: 500, protein: 30, carbs: 50, fat: 20, eatenAtLocal: date + "T12:00", timeZone: "Asia/Kolkata" }, 0, "/api/food");
+  const goals = { calories: { min: 2200, max: 2500 }, protein: { min: 100, max: 150 }, carbs: { min: 250, max: 300 }, fat: { min: 60, max: 80 } };
+  await request("PUT", { ...goals, effectiveFrom: date }, 0, "/api/food/goals");
+  await request("PUT", { goals: { calories: 400, steps: 8000, minutes: 30 }, effectiveFrom: date });
+  const response = await request("GET", undefined, 0, "/api/home?date=" + date), home = await response.json();
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(home.activity.calories, 254.19); assert.equal(home.activity.steps, 10000); assert.equal(home.activity.minutes, 60);
+  assert.deepEqual(home.food, { calories: 500, entries: 1, protein: 30, carbs: 50, fat: 20 });
+  assert.equal(home.activityGoals.calories, 400); assert.deepEqual(home.foodGoals, goals); assert.equal(home.profile.sex, "prefer_not_to_say");
+  const other = await (await request("GET", undefined, 1, "/api/home?date=" + date + "&userId=" + users[0].id)).json();
+  assert.equal(other.activity.calories, 0); assert.equal(other.food.calories, 0); assert.equal(other.activityGoals, null); assert.equal(other.profile.weightKg, null);
+  const view = await request("POST", { userId: users[1].id }, 0, "/api/admin/views"); assert.equal(view.status, 200);
+  const token = new URL((await view.json()).url, base).searchParams.get("view");
+  const viewed = await (await request("GET", undefined, 0, "/api/home?date=" + date + "&view=" + token)).json();
+  assert.deepEqual(viewed, other);
+});
