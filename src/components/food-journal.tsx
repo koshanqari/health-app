@@ -212,16 +212,16 @@ export function FoodJournal({ active = true, onAskAI }: { active?: boolean; onAs
 
   return <div className="food-journal">
     <div className="food-page-heading"><h1>Food</h1><div className="food-log-actions"><button className="primary-button log-food-button" onClick={() => setForm("new")} disabled={!!viewingAs || !date}><span aria-hidden="true">+</span> Log food</button></div></div>
+    <div className="journal-controls">
+      <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}><ChevronIcon direction="left" /></button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}><ChevronIcon direction="right" /></button></div>
+      {date !== localDateTime().slice(0, 10) && <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>}
+    </div>
     {data && <FoodGoalPanel onAskAI={onAskAI} key={date} goals={data.goals ?? null} effectiveFrom={data.goalEffectiveFrom ?? null} day={data.day} date={date} onSaved={effectiveFrom => {
       setNotice(`Goals saved from ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(effectiveFrom + "T12:00"))}.`);
       refreshJournal();
     }} />}
     {!data && loading && <div className="goal-loading" role="status">Loading your daily goals…</div>}
     {date && <FoodHistory active={active} date={date} revision={revision} onSelectDate={changeDate} />}
-    <div className="journal-controls">
-      <div className="journal-date"><button className="date-arrow" aria-label="Previous day" disabled={!date || date === "2000-01-01" || deleting} onClick={() => changeDate(nextFoodDate(date, -1))}><ChevronIcon direction="left" /></button><label><span className="sr-only">Journal date</span><input type="date" aria-label="Journal date" value={date} min="2000-01-01" max="2100-12-31" disabled={deleting} onChange={event => changeDate(event.target.value)} /></label><button className="date-arrow" aria-label="Next day" disabled={!date || date === "2100-12-31" || deleting} onClick={() => changeDate(nextFoodDate(date))}><ChevronIcon direction="right" /></button></div>
-      {date !== localDateTime().slice(0, 10) && <button className="text-button" disabled={deleting} onClick={() => changeDate(localDateTime().slice(0, 10))}>Today</button>}
-    </div>
     {notice && <p className="journal-notice" role="status">{notice}</p>}
     {error && <div className="form-error" role="alert"><p>{error}</p><button className="text-button" onClick={refreshJournal}>Refresh journal</button></div>}
     {loading && <p className="journal-loading" role="status">Loading your journal…</p>}
