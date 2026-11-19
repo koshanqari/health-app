@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMemberFetch, useViewingAs } from "./member-view";
 import { ChevronIcon } from "./app-header";
 import { FoodHistory } from "./food-history";
 import { isFoodDate, localDateTime, nextFoodDate } from "@/lib/food";
-import { activityTypes, activityLabels, activityDetails, activityFacts, activityMetrics, distanceActivities, stepActivities, resolveActivity, parseActivityGoals, type ActivityGoals, type ActivityFacts, type ActivityEntry, type ActivityInput, type ActivityProfile, type ActivityJournalData } from "@/lib/activity";
+import { activityTypes, activityLabels, activityDetails, activityFacts, activityMetrics, distanceActivities, stepActivities, resolveActivity, parseActivityGoals, type ActivityGoals, type ActivityFacts, type ActivityEntry, type ActivityInput, type ActivityProfile, type ActivityJournalData, type ActivityDay } from "@/lib/activity";
 const format = (value: number | null) => value === null ? "Not estimated" : new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 const metricLabels = { calories: "Logged active calories", steps: "Steps", minutes: "Active minutes" };
 
@@ -81,12 +81,7 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI, onAskAIGoals }
   return <section className="activity-journal"><div className="activity-title"><div><p className="eyebrow">A little movement, every day</p><h1>Activity</h1></div><button className="primary-button" disabled={!!viewingAs} onClick={() => setForm("new")}>Log activity</button></div>
     <div className="activity-date"><button className="date-arrow" aria-label="Previous day" disabled={date <= "2000-01-01"} onClick={() => setDate(nextFoodDate(date, -1))}><ChevronIcon direction="left" /></button><input type="date" aria-label="Activity date" value={date} min="2000-01-01" max="2100-12-31" onChange={event => { if (event.target.value) setDate(event.target.value); }} /><button className="date-arrow" aria-label="Next day" disabled={date >= "2100-12-31"} onClick={() => setDate(nextFoodDate(date))}><ChevronIcon direction="right" /></button><button className="text-button" onClick={() => setDate(localDateTime().slice(0, 10))}>Today</button></div>
     {error && <p className="form-error" role="alert">{error} <button className="text-button" onClick={refresh}>Try again</button></p>}
-    {visibleData ? <><section className="activity-summary home-today home-today-activity" aria-labelledby="activity-summary-title">
-      <div className="home-section-heading"><h2 id="activity-summary-title">{date === localDateTime().slice(0, 10) ? "Today’s activity" : new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00:00")) + " · Activity"}</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setGoalsOpen(true)}>Set goals</button></div>
-      <p className="home-total"><strong>{format(visibleData.day.calories)}</strong><span>kcal active</span></p>
-      <ActivityGoalProgress value={visibleData.day.calories} target={visibleData.goals?.calories} metric="calories" />
-      <dl className="home-metrics home-activity-metrics">{(["steps", "minutes"] as const).map(metric => <div key={metric}><dt>{metricLabels[metric]}</dt><dd>{format(visibleData.day[metric])}</dd><ActivityGoalProgress value={visibleData.day[metric]} target={visibleData.goals?.[metric]} metric={metric} /></div>)}</dl>
-    </section>
+    {visibleData ? <><ActivitySummaryCard className="activity-summary" day={visibleData.day} goals={visibleData.goals} title={date === localDateTime().slice(0, 10) ? "Today’s activity" : new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00:00")) + " · Activity"} action={<button className="text-button" disabled={!!viewingAs} onClick={() => setGoalsOpen(true)}>Set goals</button>} />
     <p className="history-footnote">Daily steps include your logged walks. Walking calories are counted once.</p>
     </> : !error && <p role="status">Loading activity…</p>}
     <FoodHistory active={active} date={date} revision={revision} onSelectDate={setDate} area="activity" />
@@ -96,6 +91,14 @@ export function ActivityJournal({ active, onOpenProfile, onAskAI, onAskAIGoals }
     <div className="activity-entries">{visibleData.entries.map(entry => <article key={entry.id}><div><h3>{entry.name}</h3><p>{entry.calories === null ? "Calories not estimated" : `${format(entry.calories)} kcal`} · {entry.stepScope === "daily_total" ? "Daily step total" : entry.calorieSource === "estimated" ? "Estimated" : entry.calorieSource === "device" ? "Device" : entry.calorieSource === "not_estimated" ? "Steps only" : "Entered"}{entry.durationMinutes !== null ? ` · ${format(entry.durationMinutes)} min` : ""}{entry.distanceKm !== null ? ` · ${format(entry.distanceKm)} km` : ""}{entry.steps !== null ? ` · ${format(entry.steps)} steps` : ""}</p><small>{entry.occurredAtLocal.slice(11)} · {activityLabels[entry.type]}</small>{entry.notes && <p>{entry.notes}</p>}</div><div className="activity-entry-actions"><button className="text-button" disabled={!!viewingAs || !!deleting} onClick={() => setForm(entry)}>Edit</button><button className="text-button" disabled={!!viewingAs || !!deleting} onClick={() => remove(entry)}>{deleting === entry.id ? "Deleting…" : "Delete"}</button></div></article>)}</div></>}
     {form && <ActivityForm entry={form === "new" ? null : form} profile={data?.profile ?? { weightKg: null, age: null }} date={date} onClose={() => setForm(null)} onOpenProfile={onOpenProfile} onSaved={value => { setForm(null); setDate(value); refresh(); }} />}
     {goalsOpen && <ActivityGoalForm goals={visibleData?.goals ?? null} date={date} onAskAI={onAskAIGoals ? effectiveFrom => { setGoalsOpen(false); onAskAIGoals(effectiveFrom); } : undefined} onClose={() => setGoalsOpen(false)} onSaved={() => { setGoalsOpen(false); refresh(); }} />}
+  </section>;
+}
+export function ActivitySummaryCard({ day, goals, title, action, metrics = ["steps", "minutes"], className = "" }: { day: ActivityDay; goals: ActivityGoals | null; title: string; action: ReactNode; metrics?: ("steps" | "minutes")[]; className?: string }) {
+  return <section className={`home-today home-today-activity ${className}`} aria-label={title} aria-busy="false">
+    <div className="home-section-heading"><h2>{title}</h2>{action}</div>
+    <p className="home-total"><strong>{format(day.calories)}</strong><span>kcal active</span></p>
+    <ActivityGoalProgress value={day.calories} target={goals?.calories} metric="calories" />
+    {metrics.length > 0 && <dl className="home-metrics home-activity-metrics" style={{ gridTemplateColumns: `repeat(${metrics.length},minmax(0,1fr))` }}>{metrics.map(metric => <div key={metric}><dt>{metricLabels[metric]}</dt><dd>{format(day[metric])}</dd><ActivityGoalProgress value={day[metric]} target={goals?.[metric]} metric={metric} /></div>)}</dl>}
   </section>;
 }
 function ActivityGoalProgress({ value, target, metric }: { value: number; target: number | null | undefined; metric: "calories" | "steps" | "minutes" }) {

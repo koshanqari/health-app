@@ -109,15 +109,15 @@ function NutrientProgress({ nutrient, consumed, goals, effectiveFrom }: { nutrie
   </div>;
 }
 
-export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskAI }: { onAskAI?: (effectiveFrom: string) => void; goals: FoodGoals | null; effectiveFrom: string | null; day: FoodSummary; date: string; onSaved: (effectiveFrom: string) => void }) {
+export function FoodGoalPanel({ goals, effectiveFrom, day, date, onSaved, onAskAI, nutrients = goalNutrients, heading, className = "" }: { nutrients?: readonly GoalNutrient[]; heading?: string; className?: string; onAskAI?: (effectiveFrom: string) => void; goals: FoodGoals | null; effectiveFrom: string | null; day: Pick<FoodSummary, GoalNutrient>; date: string; onSaved: (effectiveFrom: string) => void }) {
   const viewingAs = useViewingAs();
   const [editing, setEditing] = useState(false);
   const today = new Date(), selected = new Date(date + "T12:00");
   const isToday = today.toDateString() === selected.toDateString();
   return <>
-    <section className="food-goals" aria-label="Daily food goals">
-      <div className="goal-panel-heading"><h2>{isToday ? "Today’s goals" : `Goals for ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(selected)}`}</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setEditing(true)}>{goals ? "Edit goals" : "Set goals"}</button></div>
-      {goals ? <div className="goal-progress-grid">{goalNutrients.map(nutrient => <NutrientProgress key={nutrient} nutrient={nutrient} consumed={day[nutrient]} goals={goals} effectiveFrom={effectiveFrom} />)}</div> : <div className="goal-unset"><p>No goal set for this date.</p><p>Set a range and choose when it applies.</p></div>}
+    <section className={`food-goals ${className}`} aria-label={heading ?? "Daily food goals"}>
+      <div className="goal-panel-heading"><h2>{heading ?? (isToday ? "Today’s goals" : `Goals for ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(selected)}`)}</h2><button className="text-button" disabled={!!viewingAs} onClick={() => setEditing(true)}>{goals ? "Edit goals" : "Set goals"}</button></div>
+      {goals ? <div className="goal-progress-grid" style={{ gridTemplateColumns: `repeat(${Math.max(1, nutrients.filter(key => key !== "calories").length)},minmax(0,1fr))` }}>{nutrients.map(nutrient => <NutrientProgress key={nutrient} nutrient={nutrient} consumed={day[nutrient]} goals={goals} effectiveFrom={effectiveFrom} />)}</div> : <div className="goal-unset"><p>No goal set for this date.</p><p>Set a range and choose when it applies.</p></div>}
     </section>
     {editing && <GoalForm goals={goals} onAskAI={onAskAI ? from => { setEditing(false); onAskAI(from); } : undefined} onClose={() => setEditing(false)} onSaved={value => { onSaved(value); setEditing(false); }} />}
   </>;

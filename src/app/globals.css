@@ -669,6 +669,17 @@ h1, h2, h3 { line-height: 1.2; }
 .home-task-card .primary-button { min-height:40px; padding:9px 22px; font-size:13px; }
 @media(max-width:600px) { .home-task-card { padding:20px; } .home-task-card h3 { font-size:18px; } .home-task-card p { font-size:13px; } }
 
-.activity-summary .home-section-heading .text-button { padding:0; white-space:nowrap; font-size:13px; }
-.activity-summary .home-metrics .home-goal-note { font-size:12px; margin-top:8px; }
-.activity-summary .home-metrics progress { margin-top:10px; }
+.home-today-activity .home-section-heading .text-button { padding:0; white-space:nowrap; font-size:13px; }
+.home-today-activity .home-metrics .home-goal-note { font-size:12px; margin-top:8px; }
+.home-today-activity .home-metrics progress { margin-top:10px; }
+
+.home-today-food { margin:0 0 22px; }
+.home-configure { text-align:center; margin-top:24px; }
+.home-config-options { border:0; padding:0; margin:22px 0 0; min-width:0; }
+.home-config-card { border-top:1px solid var(--line); padding:16px 0; }
+.home-config-card-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.home-config-options label { display:flex; align-items:center; gap:12px; font-size:14px; }
+.home-config-card-heading label { font-weight:800; }
+.home-config-options input { width:18px; height:18px; accent-color:var(--accent-text); flex-shrink:0; }
+.home-config-details { display:grid; gap:14px; padding:18px 0 0 30px; }
+.home-config-details label { color:var(--muted); }

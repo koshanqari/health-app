@@ -6,6 +6,7 @@ export class ProfileUpdateError extends Error {
 }
 export async function migrateProfileDetails(connection: DatabaseConnection) {
   for (const sql of [
+    'ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "homePreferences" JSONB CHECK (jsonb_typeof("homePreferences") = \'object\')',
     'ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS age INTEGER CHECK (age BETWEEN 0 AND 130)',
     'ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "weightKg" NUMERIC(4,1) CHECK ("weightKg" > 0 AND "weightKg" <= 500)',
     'ALTER TABLE "userProfile" ADD COLUMN IF NOT EXISTS "ageUpdatedAt" TIMESTAMP',

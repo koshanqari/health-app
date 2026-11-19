@@ -1,6 +1,7 @@
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { defaultHomePreferences, parseHomePreferences } from "../src/lib/home-preferences";
 import { db } from "../src/lib/db";
 import { activityTypes, activityDetails, activityFacts, parseActivityFacts, parseActivityGoalChange, parseActivityGoals, prepareActivityChatProposal, resolveActivity } from "../src/lib/activity";
 import { confirmFoodChat, confirmFoodChatActivityGoals, confirmFoodChatActivity, getFoodChat, resetFoodChat, sendFoodChat } from "../src/lib/food-chat";
@@ -251,4 +252,27 @@ test("activity goal proposals validate independently, retain dated targets and s
   const [activityAfter] = await db.execute('SELECT COUNT(*)::int AS count FROM "activityEntry" WHERE "userId"=$1', [users[0].id]); assert.equal(activityBefore[0].count, activityAfter[0].count);
   const view = await request("POST", { userId: users[1].id }, 0, "/api/admin/views"), token = new URL((await view.json()).url, base).searchParams.get("view");
   assert.equal((await request("PATCH", { draftId: draft.draftId, activityGoals: change }, 0, "/api/food/chat?view=" + token)).status, 403);
+});
+
+
+test("homepage preferences persist per account with strict validation and read-only protection", async () => {
+  const defaults = defaultHomePreferences(), path = "/api/home";
+  assert.deepEqual(parseHomePreferences(defaults), defaults);
+  for (const invalid of [{ ...defaults, order: ["food", "food"] }, { ...defaults, food: { ...defaults.food, fat: "false" } }, { ...defaults, activity: { visible: true } }, { ...defaults, userId: users[1].id }]) assert.throws(() => parseHomePreferences(invalid));
+  const home = async (index = 0) => (await (await request("GET", undefined, index, path + "?date=2026-11-07")).json());
+  assert.deepEqual((await home()).preferences, defaults);
+  assert.equal((await fetch(base + path, { method: "PATCH" })).status, 401);
+  assert.equal((await fetch(base + path, { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: "https://outside.example", "Content-Type": "application/json" }, body: JSON.stringify(defaults) })).status, 403);
+  assert.equal((await fetch(base + path, { method: "PATCH", headers: { Cookie: users[0].cookie, Origin: base }, body: "{}" })).status, 415);
+  assert.equal((await request("PATCH", { ...defaults, order: ["activity", "activity"] }, 0, path)).status, 400);
+  assert.equal((await request("PATCH", { extra: "x".repeat(5000) }, 0, path)).status, 413);
+  const before = (await home()).profile;
+  const custom = { ...defaults, order: ["food", "activity"], food: { ...defaults.food, fat: false }, activity: { ...defaults.activity, visible: false } };
+  const saved = await request("PATCH", custom, 0, path); assert.equal(saved.status, 200); assert.equal(saved.headers.get("cache-control"), "no-store");
+  assert.deepEqual((await home()).preferences, custom); assert.deepEqual((await home()).profile, before);
+  assert.deepEqual((await home(1)).preferences, defaults);
+  const view = await request("POST", { userId: users[1].id }, 0, "/api/admin/views"); assert.equal(view.status, 200);
+  const token = new URL((await view.json()).url, base).searchParams.get("view");
+  assert.equal((await request("PATCH", custom, 0, path + "?view=" + token)).status, 403);
+  assert.deepEqual((await home(1)).preferences, defaults);
 });
